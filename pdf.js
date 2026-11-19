@@ -108,6 +108,7 @@
     (function () {
       var n, c = 0; for (n = 1; n <= N; n++) { var r = Z.pageRole(proj, n); if (r === 'cover' || r === 'photo') { if (Z.getPage(proj, n).photo) c++; } }
       if (sp.on && proj.spread.photo) c++;
+      if (Z.wrapInfo(proj).on && proj.wrap && proj.wrap.photo) c++;
       total = Math.max(1, c);
     })();
 
@@ -116,10 +117,10 @@
       for (n = 1; n <= N; n++) {
         var page = doc.addPage([s.w * PT, s.h * PT]);
         var f = mkFrame(page, s.h * PT, 0, 0);
-        var role = Z.pageRole(proj, n);
-        if (role === 'spread-l' || role === 'spread-r') {
-          var spl = Z.layoutSpread(proj, { bleed: 0 });
-          var shift = role === 'spread-l' ? 0 : -s.w;
+        var role = Z.pageRole(proj, n), wide = Z.wideAt(proj, n);
+        if (wide) {
+          var spl = Z.layoutSpread(proj, { bleed: 0 }, wide);
+          var shift = (role === 'spread-l' || role === 'wrap-l') ? 0 : -s.w;
           var fr = mkFrame(page, s.h * PT, shift, 0);
           await drawEls(fr, spl.els, { x: -shift, y: 0, w: s.w, h: s.h });
         } else {
@@ -140,9 +141,9 @@
           var pg = doc.addPage([PW * PT, PH * PT]);
           var F = mkFrame(pg, PH * PT, 0, 0);
           // artwork first, marks last so they stay on top
-          var lRole = Z.pageRole(proj, face.l);
-          if (lRole === 'spread-l') {
-            await drawEls(mkFrame(pg, PH * PT, MX, MT), Z.layoutSpread(proj).els);
+          var lWide = Z.wideAt(proj, face.l);
+          if (lWide) {
+            await drawEls(mkFrame(pg, PH * PT, MX, MT), Z.layoutSpread(proj, null, lWide).els);
           } else {
             await drawEls(mkFrame(pg, PH * PT, MX, MT), Z.layoutPage(proj, face.l, { creep: sh.shift }).els);
             await drawEls(mkFrame(pg, PH * PT, MX + W, MT), Z.layoutPage(proj, face.r, { creep: sh.shift }).els);

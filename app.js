@@ -127,6 +127,8 @@
       p.pages = p.pages || {}; p.photos = p.photos || {};
       p.spread = p.spread || { photo: null, crop: { cx: 0.5, cy: 0.5, z: 1 } };
       p.spread.crop = p.spread.crop || { cx: 0.5, cy: 0.5, z: 1 };
+      p.wrap = p.wrap || { photo: null, crop: { cx: 0.5, cy: 0.5, z: 1 } };
+      p.wrap.crop = p.wrap.crop || { cx: 0.5, cy: 0.5, z: 1 };
       S.proj = p; S.view = 'editor'; S.tab = 'pages'; S.sel = window.innerWidth >= 900 ? 1 : null; S.result = null; revokeUrls();
       buildEditor();
       var ids = Object.keys(p.photos);
@@ -176,6 +178,7 @@
     var used = {}, p = S.proj;
     Object.keys(p.pages).forEach(function (k) { if (p.pages[k] && p.pages[k].photo) used[p.pages[k].photo] = 1; });
     if (p.spread.photo) used[p.spread.photo] = 1;
+    if (p.wrap.photo) used[p.wrap.photo] = 1;
     return Promise.all(Object.keys(p.photos).filter(function (id) { return !used[id]; }).map(function (id) {
       delete p.photos[id];
       if (S.urls[id]) { URL.revokeObjectURL(S.urls[id]); delete S.urls[id]; }
@@ -184,12 +187,13 @@
   }
 
   /* ---------- slots ---------- */
+  function isWide(slot) { return slot === 'spread' || slot === 'wrap'; }
   function slotObj(slot) {
-    if (slot === 'spread') return S.proj.spread;
+    if (isWide(slot)) return S.proj[slot];
     if (!S.proj.pages[slot]) S.proj.pages[slot] = {};
     return S.proj.pages[slot];
   }
-  function slotPhoto(slot) { return slot === 'spread' ? S.proj.spread.photo : Z.getPage(S.proj, slot).photo; }
+  function slotPhoto(slot) { return isWide(slot) ? S.proj[slot].photo : Z.getPage(S.proj, slot).photo; }
   function slotCrop(slot) {
     var o = slotObj(slot);
     if (!o.crop) o.crop = { cx: 0.5, cy: 0.5, z: 1 };
@@ -197,6 +201,7 @@
   }
   function slotLabel(slot) {
     if (slot === 'spread') { var sp = Z.spreadInfo(S.proj); return 'Middle spread (pages ' + sp.left + '–' + sp.right + ')'; }
+    if (slot === 'wrap') return 'Back and front cover (pages ' + S.proj.s.pages + ' and 1)';
     return slot === 1 ? 'Cover (page 1)' : 'Page ' + slot;
   }
 
@@ -267,7 +272,7 @@
   }
 
   function frameEl(e, scale, o) {
-    var slot = e.slot === 'spread' ? 'spread' : e.n;
+    var slot = isWide(e.slot) ? e.slot : e.n;
     var fr = h('div', { class: 'fr' + (e.photo ? '' : ' empty'),
       style: 'left:' + (e.x * scale) + 'px;top:' + (e.y * scale) + 'px;width:' + (e.w * scale) + 'px;height:' + (e.h * scale) + 'px' });
     var meta = e.photo && S.proj.photos[e.photo], url = e.photo && S.urls[e.photo];
@@ -376,22 +381,25 @@
     var p = S.proj, s = p.s, N = s.pages, W = s.w, H = s.h;
     var avail = Math.max(240, bodyEl.clientWidth - 32);
     var scale = Z.clamp(avail / (2 * W), 4, 26);
-    var sp = Z.spreadInfo(p);
+    var sp = Z.spreadInfo(p), wr = Z.wrapInfo(p);
     var rows = [], n;
-    rows.push([null, 1]);
+    // a wrapped cover is shown as one wide row up front: back cover left, front cover right
+    if (wr.on) rows.push([N, 1]); else rows.push([null, 1]);
     for (n = 2; n < N; n += 2) rows.push([n, n + 1]);
-    rows.push([N, null]);
+    if (!wr.on) rows.push([N, null]);
     var wrap = h('div', { class: 'spreads' });
     rows.forEach(function (r) {
       var row = h('div', { class: 'spread', style: 'width:' + (2 * W * scale) + 'px' });
-      if (sp.on && r[0] === sp.left) {
-        var lay = Z.layoutSpread(p, { bleed: 0 });
-        lay.n = 'spread';
-        var el = pageEl(lay, scale, { interactive: true, selected: S.sel === 'spread' });
+      var wide = r[0] != null && Z.wideAt(p, r[0]);
+      if (wide) {
+        var lay = Z.layoutSpread(p, { bleed: 0 }, wide);
+        lay.n = wide;
+        var el = pageEl(lay, scale, { interactive: true, selected: S.sel === wide });
         el.classList.add('wide');
         el.append(h('div', { class: 'fold' }));
         row.append(el);
-        row.append(h('div', { class: 'pn', style: 'left:0' }, sp.left + '–' + sp.right));
+        row.append(h('div', { class: 'pn', style: 'left:0' }, wide === 'wrap' ? N + ' back' : r[0] + '–' + r[1]));
+        if (wide === 'wrap') row.append(h('div', { class: 'pn', style: 'right:0' }, '1 front'));
       } else {
         r.forEach(function (pn, i) {
           if (pn == null) { row.append(h('div', { class: 'pg ghost', style: 'width:' + (W * scale) + 'px;height:' + (H * scale) + 'px' })); return; }
@@ -417,21 +425,25 @@
     if (slot == null) { inspEl.className = 'empty'; inspEl.replaceChildren(); return; }
     kids.push(h('div', { class: 'insp-head' }, h('strong', {}, slotLabel(slot)), close));
 
-    var role = slot === 'spread' ? 'spread' : Z.pageRole(p, slot);
-    var presets = slot === 'spread' ? Z.SPREAD_PRESETS : Z.PRESETS;
+    var role = isWide(slot) ? slot : Z.pageRole(p, slot);
+    var presets = isWide(slot) ? Z.SPREAD_PRESETS : Z.PRESETS;
     var cap = function (t) { return t.charAt(0).toUpperCase() + t.slice(1); };
 
-    if (role !== 'cover' && role !== 'spread') {
+    if (role !== 'cover' && !isWide(role)) {
       var kind = Z.getPage(p, slot).kind;
       kids.push(h('div', { class: 'seg' }, ['photo', 'text', 'blank'].map(function (k) {
         return h('button', { class: kind === k ? 'on' : '', onClick: function () { slotObj(slot).kind = k; save(); renderBody(); renderInspector(); } }, cap(k));
       })));
     }
+    var jb = joinButton(slot);
+    if (jb) kids.push(h('div', { class: 'row-btns' }, jb));
 
-    if (role === 'cover' || role === 'photo' || role === 'spread') {
-      var cur = slot === 'spread' ? Z.spreadInfo(p).on && p.s.spreadPreset : Z.getPage(p, slot).preset;
+    if (role === 'cover' || role === 'photo' || isWide(role)) {
+      var cur = slot === 'spread' ? p.s.spreadPreset : slot === 'wrap' ? p.s.wrapPreset : Z.getPage(p, slot).preset;
       var sel = h('select', { value: cur, onChange: function (e) {
-        if (slot === 'spread') p.s.spreadPreset = e.target.value; else slotObj(slot).preset = e.target.value;
+        if (slot === 'spread') p.s.spreadPreset = e.target.value;
+        else if (slot === 'wrap') p.s.wrapPreset = e.target.value;
+        else slotObj(slot).preset = e.target.value;
         save(); renderBody(); renderInspector();
       } }, presets.map(function (t) { return h('option', { value: t }, cap(t)); }));
       sel.value = cur;
@@ -454,7 +466,7 @@
           h('button', { class: 'btn small', onClick: function () { moveSlot(slot, -1); } }, '◀ Earlier'),
           h('button', { class: 'btn small', onClick: function () { moveSlot(slot, 1); } }, 'Later ▶')));
       }
-      if (role === 'cover') {
+      if (role === 'cover' || role === 'wrap') {
         kids.push(h('label', { class: 'row' }, h('span', { class: 'lab' }, 'Title'),
           h('input', { type: 'text', value: p.title, onInput: function (e) { p.title = e.target.value; save(); drawPages(); } })));
         kids.push(h('label', { class: 'row' }, h('span', { class: 'lab' }, 'Name, year'),
@@ -470,6 +482,26 @@
       kids.push(h('p', { class: 'mute' }, 'Blank page.'));
     }
     inspEl.replaceChildren.apply(inspEl, kids);
+  }
+
+  /* Split a two-page picture into single pages, or join single pages into one; the picture moves along. */
+  function setWide(key, on) {
+    var p = S.proj, info = key === 'wrap' ? Z.wrapInfo(p) : Z.spreadInfo(p), page = key === 'wrap' ? 1 : info.left;
+    var wide = p[key], pg = slotObj(page);
+    if (on && !wide.photo && Z.getPage(p, page).photo) { wide.photo = pg.photo; wide.crop = { cx: 0.5, cy: 0.5, z: 1 }; pg.photo = null; }
+    if (!on && wide.photo && !Z.getPage(p, page).photo) { pg.photo = wide.photo; pg.crop = { cx: 0.5, cy: 0.5, z: 1 }; pg.kind = 'photo'; wide.photo = null; }
+    setS(key + 'On', on);
+    S.sel = on ? key : page;
+    renderBody(); renderInspector();
+  }
+
+  function joinButton(slot) {
+    var p = S.proj, N = p.s.pages, sp = Z.spreadInfo(p);
+    if (slot === 'spread') return h('button', { class: 'btn small', onClick: function () { setWide('spread', false); } }, 'Split into two pages');
+    if (slot === 'wrap') return h('button', { class: 'btn small', onClick: function () { setWide('wrap', false); } }, 'Split into separate covers');
+    if (slot === 1 || slot === N) return h('button', { class: 'btn small', onClick: function () { setWide('wrap', true); } }, 'Wrap one picture around back and front');
+    if (N >= 8 && (slot === sp.left || slot === sp.right)) return h('button', { class: 'btn small', onClick: function () { setWide('spread', true); } }, 'Join pages ' + sp.left + '–' + sp.right + ' as one spread');
+    return null;
   }
 
   function moveSlot(slot, dir) {
@@ -492,9 +524,9 @@
         var face = side === 'front' ? sh.front : sh.back;
         wrap.append(h('div', { class: 'sheet-label' }, Z.sheetLabel(p, sh, side, geo)));
         wrap.append(paperEl(p, geo, scale, function (box) {
-          var role = Z.pageRole(p, face.l);
-          if (role === 'spread-l') {
-            var sl = Z.layoutSpread(p); var el = pageEl(sl, scale, { bleedVisible: true }); el.classList.add('wide'); el.style.position = 'absolute'; el.style.left = 0; box.append(el);
+          var wide = Z.wideAt(p, face.l);
+          if (wide) {
+            var sl = Z.layoutSpread(p, null, wide); var el = pageEl(sl, scale, { bleedVisible: true }); el.classList.add('wide'); el.style.position = 'absolute'; el.style.left = 0; box.append(el);
           } else {
             var a = pageEl(Z.layoutPage(p, face.l, { creep: sh.shift }), scale, { bleedVisible: true });
             var b = pageEl(Z.layoutPage(p, face.r, { creep: sh.shift }), scale, { bleedVisible: true });
@@ -557,13 +589,15 @@
     var p = S.proj, geo = Z.sheetGeo(p), jg = Z.jigInfo(p), sp = Z.spreadInfo(p);
     readoutEl.textContent = 'Finished page ' + Z.round1(p.s.w) + ' × ' + Z.round1(p.s.h) + ' cm · sheet ' + Z.round1(2 * p.s.w) + ' × ' + Z.round1(p.s.h) + ' cm on ' +
       geo.paper.name + ' ' + geo.paper.orient + (geo.paper.fits ? '' : ' (does not fit!)') + ' · ' + (p.s.pages / 4) + ' sheets · ' + jg.n + ' sewing holes' +
-      (sp.on ? ' · middle spread on pages ' + sp.left + '–' + sp.right : '');
+      (sp.on ? ' · middle spread on pages ' + sp.left + '–' + sp.right : '') +
+      (p.s.wrapOn ? ' · cover wraps around to page ' + p.s.pages : '');
   }
 
   function setS(key, val) {
     S.proj.s[key] = val; S.proj.s = Z.normalizeSettings(S.proj.s);
-    if (typeof S.sel === 'number') { var rl = Z.pageRole(S.proj, S.sel); if (S.sel > S.proj.s.pages || rl === 'spread-l' || rl === 'spread-r') S.sel = 1; }
-    if (S.sel === 'spread' && !Z.spreadInfo(S.proj).on) S.sel = 1;
+    if (typeof S.sel === 'number') { if (S.sel > S.proj.s.pages) S.sel = 1; var wd = Z.wideAt(S.proj, S.sel); if (wd) S.sel = wd; }
+    if (S.sel === 'spread' && !Z.spreadInfo(S.proj).on) S.sel = Z.spreadInfo(S.proj).left;
+    if (S.sel === 'wrap' && !S.proj.s.wrapOn) S.sel = 1;
     save(); updateReadouts();
   }
 
@@ -585,7 +619,10 @@
   }
 
   function checkRow(label, key) {
-    var cb = h('input', { type: 'checkbox', onChange: function () { setS(key, cb.checked); renderBody2(); } });
+    var cb = h('input', { type: 'checkbox', onChange: function () {
+      if (key === 'spreadOn' || key === 'wrapOn') setWide(key.slice(0, -2), cb.checked); else setS(key, cb.checked);
+      renderBody2();
+    } });
     cb.checked = !!S.proj.s[key];
     return h('label', { class: 'row check' }, cb, h('span', {}, label));
   }
@@ -617,8 +654,11 @@
         selectRow('Paper size', 'paper', paperOpts),
         selectRow('Sewing holes', 'holes', holes)),
       h('section', {}, h('h3', {}, 'Middle spread'),
-        checkRow('One picture across the middle two pages (needs 8+ pages)', 'spreadOn'),
+        checkRow('One picture across the middle two pages (needs 8+ pages). Off: two separate pages with their own pictures', 'spreadOn'),
         selectRow('Spread frame', 'spreadPreset', Z.SPREAD_PRESETS.map(function (t) { return [t, t.charAt(0).toUpperCase() + t.slice(1)]; }))),
+      h('section', {}, h('h3', {}, 'Cover'),
+        checkRow('One picture wrapping around the back and front cover', 'wrapOn'),
+        selectRow('Wrap frame', 'wrapPreset', Z.SPREAD_PRESETS.map(function (t) { return [t, t.charAt(0).toUpperCase() + t.slice(1)]; }))),
       h('section', {}, h('h3', {}, 'Type'),
         selectRow('Body font', 'fontBody', fontOpts),
         selectRow('Title font', 'fontTitle', fontOpts),
@@ -775,6 +815,7 @@
         var p = JSON.parse(txt), oldPhotos = p.photos || {}, newId = Z.newId();
         p.id = newId; p.name = p.name || 'Imported zine'; p.s = Z.normalizeSettings(p.s); p.pages = p.pages || {};
         p.spread = p.spread || { photo: null, crop: { cx: 0.5, cy: 0.5, z: 1 } };
+        p.wrap = p.wrap || { photo: null, crop: { cx: 0.5, cy: 0.5, z: 1 } };
         S.proj = p; p.photos = {};
         var ids = Object.keys(oldPhotos);
         return ids.reduce(function (chain, id, i) {

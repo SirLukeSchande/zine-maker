@@ -34,7 +34,8 @@
       paper: 'auto', holes: 'auto',
       fontBody: 'inter', fontTitle: 'inter', titleBold: true,
       bodySize: 8, titleSize: 22,
-      spreadOn: true, spreadPreset: 'landscape 1:2'
+      spreadOn: true, spreadPreset: 'landscape 1:2',
+      wrapOn: false, wrapPreset: 'fill page'
     };
   }
 
@@ -52,6 +53,8 @@
     o.titleBold = !!o.titleBold;
     o.spreadOn = !!o.spreadOn;
     if (SPREAD_PRESETS.indexOf(o.spreadPreset) < 0) o.spreadPreset = 'landscape 1:2';
+    o.wrapOn = !!o.wrapOn;
+    if (SPREAD_PRESETS.indexOf(o.wrapPreset) < 0) o.wrapPreset = 'fill page';
     if (!FONTS.some(function (f) { return f.id === o.fontBody; })) o.fontBody = 'inter';
     if (!FONTS.some(function (f) { return f.id === o.fontTitle; })) o.fontTitle = 'inter';
     return o;
@@ -68,6 +71,7 @@
       s: defaultSettings(),
       pages: {},                 // "n" -> overrides of pageDefaults
       spread: { photo: null, crop: { cx: 0.5, cy: 0.5, z: 1 } },
+      wrap: { photo: null, crop: { cx: 0.5, cy: 0.5, z: 1 } },   // one picture across back (left) and front (right) cover
       photos: {}                 // photoId -> { w, h, name }
     };
   }
@@ -92,12 +96,24 @@
     return { on: on, left: N / 2, right: N / 2 + 1 };
   }
 
+  function wrapInfo(proj) {
+    return { on: !!proj.s.wrapOn, left: proj.s.pages, right: 1 };
+  }
+
   function pageRole(proj, n) {
-    var sp = spreadInfo(proj);
+    var sp = spreadInfo(proj), wr = wrapInfo(proj);
     if (sp.on && n === sp.left) return 'spread-l';
     if (sp.on && n === sp.right) return 'spread-r';
+    if (wr.on && n === wr.left) return 'wrap-l';
+    if (wr.on && n === wr.right) return 'wrap-r';
     if (n === 1) return 'cover';
     return getPage(proj, n).kind;
+  }
+
+  /* 'spread' or 'wrap' when page n is half of a two-page picture, else null */
+  function wideAt(proj, n) {
+    var r = pageRole(proj, n);
+    return r === 'spread-l' || r === 'spread-r' ? 'spread' : r === 'wrap-l' || r === 'wrap-r' ? 'wrap' : null;
   }
 
   /* Elements are in page-local cm, origin top-left of the trimmed page. */
@@ -110,7 +126,7 @@
     var dx = side === 'left' ? creep : -creep;
     var role = pageRole(proj, n);
     var out = { n: n, side: side, role: role, w: W, h: H, els: [] };
-    if (role === 'spread-l' || role === 'spread-r') return out;
+    if (wideAt(proj, n)) return out;
     var pg = getPage(proj, n), cover = (n === 1);
     if (cover || pg.kind === 'photo') {
       var fill = pg.preset === 'fill page', fr;
@@ -144,20 +160,31 @@
     return out;
   }
 
-  /* Middle spread picture in spread-local cm (width 2W). */
-  function layoutSpread(proj, opt) {
+  /* Two-page picture in spread-local cm (width 2W): the middle spread, or with key 'wrap'
+     the back cover (left half) and front cover (right half) with the title on the front. */
+  function layoutSpread(proj, opt, key) {
     opt = opt || {};
-    var s = proj.s, W = s.w, H = s.h, m = s.margin;
+    key = key || 'spread';
+    var s = proj.s, W = s.w, H = s.h, m = s.margin, wrap = key === 'wrap';
     var bleed = opt.bleed == null ? s.bleed : opt.bleed;
-    var fill = s.spreadPreset === 'fill page', fr;
+    var preset = wrap ? s.wrapPreset : s.spreadPreset, data = proj[key] || { photo: null, crop: { cx: 0.5, cy: 0.5, z: 1 } };
+    var fill = preset === 'fill page', fr;
     if (fill) fr = { x: -bleed, y: -bleed, w: 2 * W + 2 * bleed, h: H + 2 * bleed };
     else {
-      var r = RATIO[s.spreadPreset] || 2;
-      var w = Math.min(2 * W - 2 * m, (H - 2 * m) * r), h = w / r;
-      fr = { x: W - w / 2, y: (H - h) / 2, w: w, h: h };
+      var r = RATIO[preset] || 2, rH = Math.max(1, H - 2 * m - (wrap ? 3.75 : 0));
+      var w = Math.min(2 * W - 2 * m, rH * r), h = w / r;
+      fr = { x: W - w / 2, y: m + (rH - h) / 2, w: w, h: h };
     }
-    return { w: 2 * W, h: H, els: [{ type: 'photo', slot: 'spread', fill: fill, photo: proj.spread.photo,
-      crop: proj.spread.crop, x: fr.x, y: fr.y, w: fr.w, h: fr.h }] };
+    var els = [{ type: 'photo', slot: key, fill: fill, photo: data.photo,
+      crop: data.crop, x: fr.x, y: fr.y, w: fr.w, h: fr.h }];
+    if (wrap) {
+      var col = fill && data.photo ? '#ffffff' : '#111111';
+      els.push({ type: 'text', field: 'title', text: proj.title || '', ph: 'Title', x: W + m, y: H - m - 1.3, w: W - 2 * m,
+        size: s.titleSize, font: 'title', bold: s.titleBold, lineH: 1.15, anchor: 'bottom', color: col });
+      els.push({ type: 'text', field: 'byline', text: proj.byline || '', ph: 'Name — year', x: W + m, y: H - m, w: W - 2 * m,
+        size: 8, font: 'body', bold: false, lineH: 1.4, anchor: 'bottom', color: col });
+    }
+    return { w: 2 * W, h: H, els: els };
   }
 
   function imposition(proj) {
@@ -237,11 +264,12 @@
   }
 
   function photoPages(proj) { // reading-order list of slots that take a picture
-    var N = proj.s.pages, list = [], n, sp = spreadInfo(proj);
+    var N = proj.s.pages, list = [], n;
     for (n = 1; n <= N; n++) {
       var role = pageRole(proj, n);
       if (role === 'spread-l') list.push('spread');
-      else if (role === 'spread-r') continue;
+      else if (role === 'wrap-r') list.push('wrap');
+      else if (role === 'spread-r' || role === 'wrap-l') continue;
       else if (role === 'cover' || role === 'photo') list.push(n);
     }
     return list;
@@ -251,7 +279,7 @@
     PT_PER_CM: PT_PER_CM, PRESETS: PRESETS, SPREAD_PRESETS: SPREAD_PRESETS, RATIO: RATIO, FONTS: FONTS, DIN: DIN, SLUG: SLUG,
     clamp: clamp, round1: round1, defaultSettings: defaultSettings, normalizeSettings: normalizeSettings,
     defaultProject: defaultProject, newId: newId, pageDefaults: pageDefaults, getPage: getPage, spreadInfo: spreadInfo,
-    pageRole: pageRole, layoutPage: layoutPage, layoutSpread: layoutSpread, imposition: imposition, sheetGeo: sheetGeo,
+    wrapInfo: wrapInfo, wideAt: wideAt, pageRole: pageRole, layoutPage: layoutPage, layoutSpread: layoutSpread, imposition: imposition, sheetGeo: sheetGeo,
     jigInfo: jigInfo, sheetLabel: sheetLabel, cropRegion: cropRegion, wrapText: wrapText, photoPages: photoPages
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ZL = api;
