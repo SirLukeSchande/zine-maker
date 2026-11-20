@@ -3,7 +3,7 @@
   'use strict';
 
   var PT_PER_CM = 72 / 2.54;
-  var PRESETS = ['fill page', 'portrait 4:3', 'portrait 3:2', 'landscape 4:3', 'landscape 3:2', 'landscape 1:2'];
+  var PRESETS = ['fill page', 'portrait 4:3', 'portrait 3:2', 'landscape 4:3', 'landscape 3:2', 'landscape 1:2', 'landscape 65:24'];
   var SPREAD_PRESETS = ['fill page', 'landscape 4:3', 'landscape 3:2', 'landscape 1:2', 'landscape 65:24'];
   var RATIO = {
     'portrait 4:3': 3 / 4, 'portrait 3:2': 2 / 3,
