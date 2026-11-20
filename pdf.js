@@ -106,7 +106,11 @@
 
     // count photo placements for progress
     (function () {
-      var n, c = 0; for (n = 1; n <= N; n++) { var r = Z.pageRole(proj, n); if (r === 'cover' || r === 'photo') { if (Z.getPage(proj, n).photo) c++; } }
+      var n, c = 0; for (n = 1; n <= N; n++) { var r = Z.pageRole(proj, n); if (r === 'cover' || r === 'photo') {
+        var gp = Z.getPage(proj, n), k;
+        if (gp.photo) c++;
+        for (k = 1; k < gp.count; k++) if (gp.pics[k - 1].photo) c++;
+      } }
       if (sp.on && proj.spread.photo) c++;
       if (Z.wrapInfo(proj).on && proj.wrap && proj.wrap.photo) c++;
       total = Math.max(1, c);

@@ -176,7 +176,11 @@
 
   function gcPhotos() {
     var used = {}, p = S.proj;
-    Object.keys(p.pages).forEach(function (k) { if (p.pages[k] && p.pages[k].photo) used[p.pages[k].photo] = 1; });
+    Object.keys(p.pages).forEach(function (k) {
+      var pg = p.pages[k]; if (!pg) return;
+      if (pg.photo) used[pg.photo] = 1;
+      (pg.pics || []).forEach(function (q) { if (q && q.photo) used[q.photo] = 1; });
+    });
     if (p.spread.photo) used[p.spread.photo] = 1;
     if (p.wrap.photo) used[p.wrap.photo] = 1;
     return Promise.all(Object.keys(p.photos).filter(function (id) { return !used[id]; }).map(function (id) {
@@ -187,13 +191,28 @@
   }
 
   /* ---------- slots ---------- */
+  /* A slot is a page number, 'spread', 'wrap', or 'n:i' for the 2nd/3rd picture (i = 1, 2) on page n. */
   function isWide(slot) { return slot === 'spread' || slot === 'wrap'; }
+  function subOf(slot) {
+    if (typeof slot !== 'string' || slot.indexOf(':') < 0) return null;
+    var a = slot.split(':'); return { n: +a[0], i: +a[1] };
+  }
+  function slotPage(slot) { var sub = subOf(slot); return sub ? sub.n : slot; }
   function slotObj(slot) {
     if (isWide(slot)) return S.proj[slot];
-    if (!S.proj.pages[slot]) S.proj.pages[slot] = {};
-    return S.proj.pages[slot];
+    var sub = subOf(slot), n = sub ? sub.n : slot;
+    if (!S.proj.pages[n]) S.proj.pages[n] = {};
+    var pg = S.proj.pages[n];
+    if (!sub) return pg;
+    pg.pics = pg.pics || [];
+    if (!pg.pics[sub.i - 1]) pg.pics[sub.i - 1] = { photo: null, crop: { cx: 0.5, cy: 0.5, z: 1 } };
+    return pg.pics[sub.i - 1];
   }
-  function slotPhoto(slot) { return isWide(slot) ? S.proj[slot].photo : Z.getPage(S.proj, slot).photo; }
+  function slotPhoto(slot) {
+    if (isWide(slot)) return S.proj[slot].photo;
+    var sub = subOf(slot);
+    return sub ? Z.getPage(S.proj, sub.n).pics[sub.i - 1].photo : Z.getPage(S.proj, slot).photo;
+  }
   function slotCrop(slot) {
     var o = slotObj(slot);
     if (!o.crop) o.crop = { cx: 0.5, cy: 0.5, z: 1 };
@@ -202,7 +221,9 @@
   function slotLabel(slot) {
     if (slot === 'spread') { var sp = Z.spreadInfo(S.proj); return 'Middle spread (pages ' + sp.left + '–' + sp.right + ')'; }
     if (slot === 'wrap') return 'Back and front cover (pages ' + S.proj.s.pages + ' and 1)';
-    return slot === 1 ? 'Cover (page 1)' : 'Page ' + slot;
+    var sub = subOf(slot), n = slotPage(slot), name = n === 1 ? 'Cover (page 1)' : 'Page ' + n;
+    if (Z.getPage(S.proj, n).count > 1) name += ', picture ' + (sub ? sub.i + 1 : 1);
+    return name;
   }
 
   /* ---------- photo import ---------- */
@@ -272,15 +293,16 @@
   }
 
   function frameEl(e, scale, o) {
-    var slot = isWide(e.slot) ? e.slot : e.n;
-    var fr = h('div', { class: 'fr' + (e.photo ? '' : ' empty'),
+    var slot = e.slot;
+    var multi = o.interactive && !isWide(slot) && Z.getPage(S.proj, e.n).count > 1;
+    var fr = h('div', { class: 'fr' + (e.photo ? '' : ' empty') + (multi && S.sel === slot ? ' on' : ''),
       style: 'left:' + (e.x * scale) + 'px;top:' + (e.y * scale) + 'px;width:' + (e.w * scale) + 'px;height:' + (e.h * scale) + 'px' });
     var meta = e.photo && S.proj.photos[e.photo], url = e.photo && S.urls[e.photo];
     if (meta && url) {
       var img = h('img', { src: url, alt: '', draggable: 'false' });
       fr.append(img);
       applyCropImg(img, meta, e.crop, e, scale);
-      if (o.interactive && o.selected) attachCrop(fr, img, slot, meta, e, scale);
+      if (o.interactive && S.sel === slot) attachCrop(fr, img, slot, meta, e, scale);
     } else if (o.interactive) {
       fr.append(h('span', { class: 'plus' }, e.photo ? '…' : '+'));
     }
@@ -404,7 +426,7 @@
         r.forEach(function (pn, i) {
           if (pn == null) { row.append(h('div', { class: 'pg ghost', style: 'width:' + (W * scale) + 'px;height:' + (H * scale) + 'px' })); return; }
           var lay2 = Z.layoutPage(p, pn, { bleed: 0 });
-          var pe = pageEl(lay2, scale, { interactive: true, selected: S.sel === pn });
+          var pe = pageEl(lay2, scale, { interactive: true, selected: slotPage(S.sel) === pn });
           row.append(pe);
         });
         r.forEach(function (pn, i) { if (pn != null) row.append(h('div', { class: 'pn', style: (i === 0 ? 'left:0' : 'right:0') }, pn)); });
@@ -425,21 +447,44 @@
     if (slot == null) { inspEl.className = 'empty'; inspEl.replaceChildren(); return; }
     kids.push(h('div', { class: 'insp-head' }, h('strong', {}, slotLabel(slot)), close));
 
-    var role = isWide(slot) ? slot : Z.pageRole(p, slot);
+    var pn = slotPage(slot), role = isWide(slot) ? slot : Z.pageRole(p, pn);
     var presets = isWide(slot) ? Z.SPREAD_PRESETS : Z.PRESETS;
     var cap = function (t) { return t.charAt(0).toUpperCase() + t.slice(1); };
 
     if (role !== 'cover' && !isWide(role)) {
-      var kind = Z.getPage(p, slot).kind;
+      var kind = Z.getPage(p, pn).kind;
       kids.push(h('div', { class: 'seg' }, ['photo', 'text', 'blank'].map(function (k) {
-        return h('button', { class: kind === k ? 'on' : '', onClick: function () { slotObj(slot).kind = k; save(); renderBody(); renderInspector(); } }, cap(k));
+        return h('button', { class: kind === k ? 'on' : '', onClick: function () { slotObj(pn).kind = k; S.sel = pn; save(); renderBody(); renderInspector(); } }, cap(k));
       })));
     }
-    var jb = joinButton(slot);
+    var jb = joinButton(pn);
     if (jb) kids.push(h('div', { class: 'row-btns' }, jb));
 
     if (role === 'cover' || role === 'photo' || isWide(role)) {
-      var cur = slot === 'spread' ? p.s.spreadPreset : slot === 'wrap' ? p.s.wrapPreset : Z.getPage(p, slot).preset;
+      var pgd = isWide(role) ? null : Z.getPage(p, pn), sub = subOf(slot);
+      if (pgd) {
+        kids.push(h('div', { class: 'row' }, h('span', { class: 'lab' }, 'Pictures'), h('div', { class: 'seg grow' }, [1, 2, 3].map(function (c) {
+          return h('button', { class: pgd.count === c ? 'on' : '', onClick: function () { setCount(pn, c); } }, String(c));
+        }))));
+        if (pgd.count > 1) {
+          kids.push(h('div', { class: 'row' }, h('span', { class: 'lab' }, 'Arrange'), h('div', { class: 'seg grow' }, [['row', 'Side by side'], ['column', 'Stacked']].map(function (d) {
+            return h('button', { class: pgd.dir === d[0] ? 'on' : '', onClick: function () { slotObj(pn).dir = d[0]; save(); renderBody(); renderInspector(); } }, d[1]);
+          }))));
+          if (pgd.preset === 'fill page' || pgd.pics.slice(0, pgd.count - 1).some(function (q) { return q.preset === 'fill page'; }))
+            kids.push(h('p', { class: 'mute small' }, 'With a filled picture the page is always split into equal parts.'));
+          else kids.push(h('div', { class: 'row' }, h('span', { class: 'lab' }, 'Size'), h('div', { class: 'seg grow' },
+            [['match', pgd.dir === 'row' ? 'Same height' : 'Same width'], ['equal', 'Equal space']].map(function (d) {
+              return h('button', { class: pgd.fit === d[0] ? 'on' : '', onClick: function () { slotObj(pn).fit = d[0]; save(); renderBody(); renderInspector(); } }, d[1]);
+            }))));
+          var gapOut = h('output', {}, Z.round1(pgd.gap) + ' cm');
+          kids.push(h('label', { class: 'row' }, h('span', { class: 'lab' }, 'Gap'),
+            h('input', { type: 'range', min: 0, max: 3, step: 0.1, value: pgd.gap, onInput: function (e) {
+              slotObj(pn).gap = +e.target.value; gapOut.textContent = Z.round1(+e.target.value) + ' cm'; save(); drawPages();
+            } }), gapOut));
+        }
+      }
+
+      var cur = slot === 'spread' ? p.s.spreadPreset : slot === 'wrap' ? p.s.wrapPreset : sub ? pgd.pics[sub.i - 1].preset : pgd.preset;
       var sel = h('select', { value: cur, onChange: function (e) {
         if (slot === 'spread') p.s.spreadPreset = e.target.value;
         else if (slot === 'wrap') p.s.wrapPreset = e.target.value;
@@ -447,7 +492,7 @@
         save(); renderBody(); renderInspector();
       } }, presets.map(function (t) { return h('option', { value: t }, cap(t)); }));
       sel.value = cur;
-      kids.push(h('label', { class: 'row' }, h('span', { class: 'lab' }, 'Frame'), sel));
+      kids.push(h('label', { class: 'row' }, h('span', { class: 'lab' }, pgd && pgd.count > 1 ? 'Frame ' + (sub ? sub.i + 1 : 1) : 'Frame'), sel));
 
       var has = !!slotPhoto(slot);
       kids.push(h('div', { class: 'row-btns' },
@@ -471,9 +516,9 @@
           h('input', { type: 'text', value: p.title, onInput: function (e) { p.title = e.target.value; save(); drawPages(); } })));
         kids.push(h('label', { class: 'row' }, h('span', { class: 'lab' }, 'Name, year'),
           h('input', { type: 'text', value: p.byline, onInput: function (e) { p.byline = e.target.value; save(); drawPages(); } })));
-      } else if (role === 'photo' && Z.getPage(p, slot).preset !== 'fill page') {
+      } else if (role === 'photo' && Z.layoutPage(p, pn).els.some(function (e) { return e.field === 'caption'; })) {
         kids.push(h('label', { class: 'row' }, h('span', { class: 'lab' }, 'Caption'),
-          h('input', { type: 'text', value: Z.getPage(p, slot).caption, onInput: function (e) { slotObj(slot).caption = e.target.value; save(); drawPages(); } })));
+          h('input', { type: 'text', value: Z.getPage(p, pn).caption, onInput: function (e) { slotObj(pn).caption = e.target.value; save(); drawPages(); } })));
       }
     } else if (role === 'text') {
       var ta = h('textarea', { rows: 6, value: Z.getPage(p, slot).text, onInput: function (e) { slotObj(slot).text = e.target.value; save(); drawPages(); } });
@@ -482,6 +527,17 @@
       kids.push(h('p', { class: 'mute' }, 'Blank page.'));
     }
     inspEl.replaceChildren.apply(inspEl, kids);
+  }
+
+  /* Number of pictures on a page; pictures beyond the count stay stored and come back when it is raised. */
+  function setCount(n, c) {
+    var pg = Z.getPage(S.proj, n), i;
+    slotObj(n).count = c;
+    // a newly shown picture starts with the first picture's frame
+    for (i = pg.count; i < c; i++) if (!slotObj(n + ':' + i).preset) slotObj(n + ':' + i).preset = pg.preset;
+    var sub = subOf(S.sel);
+    if (sub && sub.n === n && sub.i >= c) S.sel = n;
+    save(); renderBody(); renderInspector();
   }
 
   /* Split a two-page picture into single pages, or join single pages into one; the picture moves along. */
@@ -508,7 +564,8 @@
     var list = Z.photoPages(S.proj), i = list.indexOf(slot), j = i + dir;
     if (i < 0 || j < 0 || j >= list.length) return;
     var a = slotObj(list[i]), b = slotObj(list[j]);
-    ['photo', 'crop', 'caption'].forEach(function (k) { var t = a[k]; a[k] = b[k]; b[k] = t; });
+    // captions belong to the page, so they only travel between first pictures
+    (subOf(list[i]) || subOf(list[j]) ? ['photo', 'crop'] : ['photo', 'crop', 'caption']).forEach(function (k) { var t = a[k]; a[k] = b[k]; b[k] = t; });
     S.sel = list[j]; save(); renderBody(); renderInspector();
   }
 
@@ -595,6 +652,8 @@
 
   function setS(key, val) {
     S.proj.s[key] = val; S.proj.s = Z.normalizeSettings(S.proj.s);
+    var sub = subOf(S.sel);
+    if (sub && (sub.n > S.proj.s.pages || Z.wideAt(S.proj, sub.n))) S.sel = sub.n;
     if (typeof S.sel === 'number') { if (S.sel > S.proj.s.pages) S.sel = 1; var wd = Z.wideAt(S.proj, S.sel); if (wd) S.sel = wd; }
     if (S.sel === 'spread' && !Z.spreadInfo(S.proj).on) S.sel = Z.spreadInfo(S.proj).left;
     if (S.sel === 'wrap' && !S.proj.s.wrapOn) S.sel = 1;

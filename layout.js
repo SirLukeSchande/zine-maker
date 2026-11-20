@@ -24,6 +24,7 @@
   ];
   var DIN = [['A4', 29.7, 21], ['A3', 42, 29.7], ['A2', 59.4, 42], ['A1', 84.1, 59.4], ['A0', 118.9, 84.1]];
   var SLUG = 2; // cm of free paper around the trimmed sheet, for marks and page numbers
+  var GAP = 0.4; // default cm between pictures that share a page
 
   var clamp = function (v, a, b) { return Math.min(b, Math.max(a, v)); };
   var round1 = function (v) { return Math.round(v * 10) / 10; };
@@ -79,14 +80,33 @@
   function pageDefaults(n, N) {
     var text = (n === 2 || n === N - 1 || n === N);
     return { kind: text ? 'text' : 'photo', preset: 'portrait 4:3', photo: null,
-      crop: { cx: 0.5, cy: 0.5, z: 1 }, caption: '', text: '' };
+      crop: { cx: 0.5, cy: 0.5, z: 1 }, caption: '', text: '',
+      count: 1, dir: 'row',      // up to 3 pictures, side by side ('row') or stacked ('column')
+      gap: GAP,                  // cm between them
+      fit: 'match',              // 'match': framed pictures share one height (side by side) or width (stacked); 'equal': equal parts
+      pics: [] };                // pictures 2 and 3: [{ photo, crop, preset }]
+  }
+
+  function normCrop(c) {
+    c = c || {};
+    return { cx: c.cx != null ? c.cx : 0.5, cy: c.cy != null ? c.cy : 0.5, z: c.z || 1 };
   }
 
   function getPage(proj, n) {
     var d = pageDefaults(n, proj.s.pages), o = (proj.pages && proj.pages[n]) || {};
     var r = {}, k;
     for (k in d) r[k] = o[k] !== undefined ? o[k] : d[k];
-    r.crop = { cx: (o.crop && o.crop.cx != null) ? o.crop.cx : 0.5, cy: (o.crop && o.crop.cy != null) ? o.crop.cy : 0.5, z: (o.crop && o.crop.z) || 1 };
+    r.crop = normCrop(o.crop);
+    r.count = clamp(Math.round(+r.count) || 1, 1, 3);
+    r.dir = r.dir === 'column' ? 'column' : 'row';
+    r.fit = r.fit === 'equal' ? 'equal' : 'match';
+    r.gap = clamp(isNaN(+r.gap) ? GAP : +r.gap, 0, 3);
+    if (PRESETS.indexOf(r.preset) < 0) r.preset = d.preset;
+    var pics = o.pics || [];
+    r.pics = [0, 1].map(function (i) {
+      var q = pics[i] || {};
+      return { photo: q.photo || null, crop: normCrop(q.crop), preset: PRESETS.indexOf(q.preset) < 0 ? r.preset : q.preset };
+    });
     return r;
   }
 
@@ -129,28 +149,67 @@
     if (wideAt(proj, n)) return out;
     var pg = getPage(proj, n), cover = (n === 1);
     if (cover || pg.kind === 'photo') {
-      var fill = pg.preset === 'fill page', fr;
-      if (fill) {
-        fr = side === 'left'
-          ? { x: -bleed, y: -bleed, w: W + bleed, h: H + 2 * bleed }
-          : { x: 0, y: -bleed, w: W + bleed, h: H + 2 * bleed };
+      var k = pg.count, row = pg.dir === 'row', g = pg.gap, i;
+      var pics = [pg].concat(pg.pics.slice(0, k - 1));
+      var isFill = pics.map(function (q) { return q.preset === 'fill page'; });
+      var fill = isFill.indexOf(true) >= 0, cells = [];
+      var rW = Math.max(1, W - 2 * m), rH = Math.max(1, H - 2 * m - (cover ? 3.75 : 1.75));
+      if (fill || pg.fit === 'equal') {
+        // equal parts: filled pictures take their part of the trimmed page, framed ones their part of the area inside the margins
+        var cw = row ? (W - (k - 1) * g) / k : W, ch = row ? H : (H - (k - 1) * g) / k;
+        var pw = Math.max(0.5, row ? (rW - (k - 1) * g) / k : rW), ph = Math.max(0.5, row ? rH : (rH - (k - 1) * g) / k);
+        for (i = 0; i < k; i++) {
+          var x0 = row ? i * (cw + g) : 0, y0 = row ? 0 : i * (ch + g), x1 = x0 + cw, y1 = y0 + ch;
+          var eL = !row || i === 0, eR = !row || i === k - 1, eT = row || i === 0, eB = row || i === k - 1;
+          if (isFill[i]) { // run into the bleed on the outer edges, never across the spine
+            if (eL && side === 'left') x0 = -bleed;
+            if (eR && side === 'right') x1 = W + bleed;
+            if (eT) y0 = -bleed;
+            if (eB) y1 = H + bleed;
+            cells.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+          } else {
+            var px0 = m + (row ? i * (pw + g) : 0), py0 = m + (row ? 0 : i * (ph + g)), px1 = px0 + pw, py1 = py0 + ph;
+            // next to a filled picture, stay out of its part
+            if (fill) { px0 = Math.max(px0, x0); py0 = Math.max(py0, y0); px1 = Math.min(px1, x1); py1 = Math.min(py1, y1); }
+            x0 = px0; y0 = py0;
+            var r = RATIO[pics[i].preset] || 0.75, bw = Math.max(0.5, px1 - px0), bh = Math.max(0.5, py1 - py0);
+            var w = Math.min(bw, bh * r), h = w / r;
+            cells.push({ x: x0 + (bw - w) / 2 + dx, y: y0 + (bh - h) / 2, w: w, h: h });
+          }
+        }
       } else {
-        var r = RATIO[pg.preset] || 0.75;
-        var rW = Math.max(1, W - 2 * m), rH = Math.max(1, H - 2 * m - (cover ? 3.75 : 1.75));
-        var w = Math.min(rW, rH * r), h = w / r;
-        fr = { x: m + (rW - w) / 2 + dx, y: m + (rH - h) / 2, w: w, h: h };
+        // packed group: same height side by side, same width stacked
+        var rs = pics.map(function (q) { return RATIO[q.preset] || 0.75; }), sum = 0;
+        rs.forEach(function (r) { sum += row ? r : 1 / r; });
+        var cross = row ? Math.min(rH, Math.max(0.5, rW - (k - 1) * g) / sum) : Math.min(rW, Math.max(0.5, rH - (k - 1) * g) / sum);
+        var sizes = rs.map(function (r) { return row ? { w: cross * r, h: cross } : { w: cross, h: cross / r }; });
+        var gw = row ? (k - 1) * g : cross, gh = row ? cross : (k - 1) * g;
+        sizes.forEach(function (z) { if (row) gw += z.w; else gh += z.h; });
+        var cx = m + (rW - gw) / 2 + dx, cy = m + (rH - gh) / 2;
+        sizes.forEach(function (z) {
+          cells.push({ x: row ? cx : cx + (gw - z.w) / 2, y: row ? cy + (gh - z.h) / 2 : cy, w: z.w, h: z.h });
+          if (row) cx += z.w + g; else cy += z.h + g;
+        });
       }
-      out.els.push({ type: 'photo', slot: 'page', n: n, fill: fill, photo: pg.photo, crop: pg.crop,
-        x: fr.x, y: fr.y, w: fr.w, h: fr.h });
-      var light = fill && !!pg.photo;
+      var light = false, fr = null;
+      cells.forEach(function (c, i) {
+        var pic = pics[i];
+        if (pic.photo && isFill[i]) light = true;
+        out.els.push({ type: 'photo', slot: i ? n + ':' + i : n, n: n, fill: isFill[i], photo: pic.photo, crop: pic.crop,
+          x: c.x, y: c.y, w: c.w, h: c.h });
+        if (isFill[i]) return;
+        // bounds of the framed pictures, for the caption
+        if (!fr) fr = { x: c.x, y: c.y, r: c.x + c.w, b: c.y + c.h };
+        else { fr.x = Math.min(fr.x, c.x); fr.y = Math.min(fr.y, c.y); fr.r = Math.max(fr.r, c.x + c.w); fr.b = Math.max(fr.b, c.y + c.h); }
+      });
       if (cover) {
-        var tx = fill ? m + dx : fr.x;
+        var tx = fill || !fr ? m + dx : fr.x;
         out.els.push({ type: 'text', field: 'title', text: proj.title || '', ph: 'Title', x: tx, y: H - m - 1.3, w: W - 2 * m,
           size: s.titleSize, font: 'title', bold: s.titleBold, lineH: 1.15, anchor: 'bottom', color: light ? '#ffffff' : '#111111' });
         out.els.push({ type: 'text', field: 'byline', text: proj.byline || '', ph: 'Name — year', x: tx, y: H - m, w: W - 2 * m,
           size: 8, font: 'body', bold: false, lineH: 1.4, anchor: 'bottom', color: light ? '#ffffff' : '#111111' });
-      } else if (!fill) {
-        out.els.push({ type: 'text', field: 'caption', text: pg.caption || '', ph: 'Caption', x: fr.x, y: fr.y + fr.h + 0.3, w: fr.w,
+      } else if (fr) {
+        out.els.push({ type: 'text', field: 'caption', text: pg.caption || '', ph: 'Caption', x: fr.x, y: fr.b + 0.3, w: fr.r - fr.x,
           size: 7, font: 'body', bold: false, lineH: 1.4, anchor: 'top', color: '#111111' });
       }
     } else if (pg.kind === 'text') {
@@ -270,13 +329,16 @@
       if (role === 'spread-l') list.push('spread');
       else if (role === 'wrap-r') list.push('wrap');
       else if (role === 'spread-r' || role === 'wrap-l') continue;
-      else if (role === 'cover' || role === 'photo') list.push(n);
+      else if (role === 'cover' || role === 'photo') {
+        list.push(n);
+        for (var i = 1; i < getPage(proj, n).count; i++) list.push(n + ':' + i);
+      }
     }
     return list;
   }
 
   var api = {
-    PT_PER_CM: PT_PER_CM, PRESETS: PRESETS, SPREAD_PRESETS: SPREAD_PRESETS, RATIO: RATIO, FONTS: FONTS, DIN: DIN, SLUG: SLUG,
+    PT_PER_CM: PT_PER_CM, GAP: GAP, PRESETS: PRESETS, SPREAD_PRESETS: SPREAD_PRESETS, RATIO: RATIO, FONTS: FONTS, DIN: DIN, SLUG: SLUG,
     clamp: clamp, round1: round1, defaultSettings: defaultSettings, normalizeSettings: normalizeSettings,
     defaultProject: defaultProject, newId: newId, pageDefaults: pageDefaults, getPage: getPage, spreadInfo: spreadInfo,
     wrapInfo: wrapInfo, wideAt: wideAt, pageRole: pageRole, layoutPage: layoutPage, layoutSpread: layoutSpread, imposition: imposition, sheetGeo: sheetGeo,

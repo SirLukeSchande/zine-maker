@@ -75,6 +75,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .row.check{gap:10px;cursor:pointer}
 .row.check input{width:20px;height:20px;accent-color:var(--acc);flex:none}
 .seg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:10px}
+.row .seg.grow{flex:1;margin-bottom:0}
 .seg button{flex:1;appearance:none;border:0;background:transparent;padding:9px;cursor:pointer;min-height:40px}
 .seg button.on{background:var(--ink);color:var(--bg)}
 /* pages */
@@ -92,6 +93,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .fr.empty{background:#ebeae6;outline:1px dashed #b9b7b0;outline-offset:-1px}
 .fr img{position:absolute;max-width:none;user-select:none;-webkit-user-drag:none;pointer-events:none}
 .fr .plus{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:28px;color:#9a988f;pointer-events:none}
+.fr.on{outline:2px solid var(--acc);outline-offset:-2px}
 .fr.grab{cursor:grab}.fr.drop{outline:3px solid var(--acc);outline-offset:-3px}
 .tx{position:absolute;white-space:pre-wrap;overflow-wrap:anywhere;pointer-events:none}
 .tx.ph{opacity:.28}
