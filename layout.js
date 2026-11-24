@@ -350,7 +350,7 @@
   function photoRefs(proj) {
     var refs = {}, add = function (id, slot) { if (id) (refs[id] = refs[id] || []).push(slot); };
     Object.keys(proj.pages || {}).forEach(function (k) {
-      var pg = proj.pages[k], n = +k; if (!pg) return;
+      var pg = proj.pages[k], n = +k; if (!pg || isKeep(k)) return;
       add(pg.photo, n);
       (pg.pics || []).forEach(function (q, i) { if (q) add(q.photo, n + ':' + (i + 1)); });
     });
@@ -365,13 +365,35 @@
     return Object.keys(proj.photos || {}).filter(function (id) { return !refs[id]; });
   }
 
+  /* Older app copies delete, on leaving the editor, every photo their gcPhotos can't see. The oldest one only looks at
+     pages[k].photo (any key) and spread.photo, so saved data gets a stub page 'keep:<id>' {photo} for every other photo.
+     Stubs exist only in stored data: withKeep adds them on save, stripKeep removes them on open. */
+  var KEEP = 'keep:';
+  function isKeep(k) { return String(k).indexOf(KEEP) === 0; }
+  function withKeep(proj) {
+    var out = {}, pages = {}, seen = {};
+    Object.keys(proj).forEach(function (k) { out[k] = proj[k]; });
+    Object.keys(proj.pages || {}).forEach(function (k) {
+      var pg = proj.pages[k]; if (isKeep(k)) return;
+      pages[k] = pg; if (pg && pg.photo) seen[pg.photo] = 1;
+    });
+    if (proj.spread && proj.spread.photo) seen[proj.spread.photo] = 1;
+    Object.keys(proj.photos || {}).forEach(function (id) { if (!seen[id]) pages[KEEP + id] = { photo: id }; });
+    out.pages = pages;
+    return out;
+  }
+  function stripKeep(proj) {
+    Object.keys(proj.pages || {}).forEach(function (k) { if (isKeep(k)) delete proj.pages[k]; });
+    return proj;
+  }
+
   var api = {
     PT_PER_CM: PT_PER_CM, GAP: GAP, ORIENTS: ORIENTS, RATIOS: RATIOS, PRESETS: PRESETS, SPREAD_PRESETS: SPREAD_PRESETS, RATIO: RATIO, FONTS: FONTS, DIN: DIN, SLUG: SLUG,
     clamp: clamp, round1: round1, defaultSettings: defaultSettings, normalizeSettings: normalizeSettings,
     defaultProject: defaultProject, newId: newId, pageDefaults: pageDefaults, getPage: getPage, spreadInfo: spreadInfo,
     wrapInfo: wrapInfo, wideAt: wideAt, pageRole: pageRole, layoutPage: layoutPage, layoutSpread: layoutSpread, imposition: imposition, sheetGeo: sheetGeo,
     jigInfo: jigInfo, sheetLabel: sheetLabel, cropRegion: cropRegion, wrapText: wrapText, photoPages: photoPages,
-    photoRefs: photoRefs, unplacedPhotos: unplacedPhotos
+    photoRefs: photoRefs, unplacedPhotos: unplacedPhotos, withKeep: withKeep, stripKeep: stripKeep
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ZL = api;
 })(typeof self !== 'undefined' ? self : this);

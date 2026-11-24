@@ -3,7 +3,7 @@
 Open work and ideas. No priorities set yet. Move items to notes.md once done.
 
 ## Compatibility
-- [ ] **Urgent: guard against older app copies opening newer projects.** Since the unplaced pool, any older copy deletes every unplaced photo when you leave the editor (see notes.md, backwards compatibility statement). Options: store a `minApp` or feature version in the project and have the app refuse to edit (or open read-only) anything newer than it understands; or make `gcPhotos` keep any photo id found anywhere in the project JSON.
+- [ ] Older copies still drop settings keys they don't know when they save (`normalizeSettings`). Only matters for features that add settings; the `app` data level warning covers copies from now on.
 - [ ] Add the backwards-compatibility check as a script in the repo (old `layout.js` from git vs. current, with sample projects per version), so it can be rerun before each release.
 
 ## Testing

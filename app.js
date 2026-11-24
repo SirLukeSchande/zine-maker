@@ -45,6 +45,9 @@
   function hideToast() { if (toastEl) toastEl.classList.remove('on'); }
 
   /* ---------- save ---------- */
+  /* Data level of this app. Raise it when a release stores something an older copy would damage when it saves. */
+  var DATA = 2;
+  function stored(p) { p.app = Math.max(p.app || 1, DATA); return Z.withKeep(p); }
   var saveT = null;
   function save() {
     clearTimeout(saveT);
@@ -54,7 +57,7 @@
     clearTimeout(saveT);
     if (!S.proj) return Promise.resolve();
     S.proj.updated = Date.now();
-    return Store.putProject({ id: S.proj.id, name: S.proj.name, updated: S.proj.updated, data: S.proj })
+    return Store.putProject({ id: S.proj.id, name: S.proj.name, updated: S.proj.updated, data: stored(S.proj) })
       .catch(function () { toast('Could not save. Is storage full?', 5000); });
   }
 
@@ -124,7 +127,8 @@
       if (!rec) return showHome();
       var p = rec.data;
       p.s = Z.normalizeSettings(p.s);
-      p.pages = p.pages || {}; p.photos = p.photos || {};
+      p.pages = p.pages || {}; p.photos = p.photos || {}; Z.stripKeep(p);
+      if (p.app > DATA) toast('This zine was saved by a newer version of the app. Reload the page to update it before you edit.', 8000);
       p.spread = p.spread || { photo: null, crop: { cx: 0.5, cy: 0.5, z: 1 } };
       p.spread.crop = p.spread.crop || { cx: 0.5, cy: 0.5, z: 1 };
       p.wrap = p.wrap || { photo: null, crop: { cx: 0.5, cy: 0.5, z: 1 } };
@@ -926,7 +930,7 @@
     S.busy = 'zine'; setProgress(0.05, 'Packing project…');
     flushSave().then(function () {
       var zip = new JSZip(), ids = Object.keys(S.proj.photos);
-      zip.file('project.json', JSON.stringify(S.proj));
+      zip.file('project.json', JSON.stringify(stored(S.proj)));
       return ids.reduce(function (chain, id, i) {
         return chain.then(function () { return Store.getPhoto(S.proj.id, id); }).then(function (rec) {
           if (rec && rec.orig) zip.file('photos/' + id, rec.orig);
@@ -961,7 +965,7 @@
               return ingestAs(file, id);
             });
           });
-        }, Promise.resolve()).then(function () { return Store.putProject({ id: p.id, name: p.name, updated: Date.now(), data: p }); }).then(function () { return p.id; });
+        }, Promise.resolve()).then(function () { return Store.putProject({ id: p.id, name: p.name, updated: Date.now(), data: stored(Z.stripKeep(p)) }); }).then(function () { return p.id; });
       });
     }).then(function (id) { hideToast(); S.proj = null; return openProject(id); })
       .catch(function (e) { S.proj = null; toast('Could not open that file: ' + (e && e.message || e), 6000); });
@@ -981,12 +985,24 @@
     });
   }
 
+  /* Projects stored before the keep stubs existed get them now, so an older copy can't delete their photos. */
+  function addKeep() {
+    return Store.listProjects().then(function (list) {
+      return Promise.all(list.map(function (rec) {
+        var p = rec.data; if (!p || !p.photos) return;
+        var before = JSON.stringify(p.pages || {}), q = Z.withKeep(Z.stripKeep(JSON.parse(JSON.stringify(p))));
+        if (JSON.stringify(q.pages) === before) return;
+        return Store.putProject({ id: rec.id, name: rec.name, updated: rec.updated, data: q });
+      }));
+    });
+  }
+
   /* ---------- go ---------- */
   function init() {
     Store.open().then(function () {
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () { });
       if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(function () { });
-      return showHome();
+      return addKeep().then(showHome, showHome);
     });
     window.addEventListener('pagehide', function () { flushSave(); });
     document.addEventListener('visibilitychange', function () { if (document.hidden) flushSave(); });

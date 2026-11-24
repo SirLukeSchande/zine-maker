@@ -26,12 +26,14 @@ See [notes.md](notes.md) for how features were built, [Plan.md](Plan.md) for ope
 - Presets are `'fill page'` or `'<portrait|landscape> <ratio>'`, built from `ORIENTS` × `RATIOS` in `layout.js`. Ratios are written long:short, except the legacy `'1:2'` (which means 2:1 landscape). To add a ratio, add one entry to `RATIOS`.
 - Slots in the UI: a page number, `'spread'`, `'wrap'`, or `'n:i'` for picture i+1 on page n (i = 1, 2).
 - Unplaced photos have no stored field: they are the photos in `photos` that no slot references (`photoRefs`/`unplacedPhotos` in `layout.js`). **The app never deletes photos automatically.** Only the Photos tab's Delete removes them, and only unplaced ones. Pictures beyond a page's `count` must not keep a photo: `setCount` and `releaseHidden` (on open) move them to the pool.
+- Stored data (IndexedDB and `.zine`) also has stub pages `pages['keep:<id>'] = {photo}` for every photo the oldest app's cleanup can't see, so older copies don't delete them. Only `withKeep` (on save, export, import) adds them and `stripKeep` (on open) removes them; the live project never has them. All writes of project data go through `stored()` in `app.js`.
+- `app`: the data level that saved the project (`DATA` in `app.js`, now 2). Opening a project with a higher level shows a warning. Raise `DATA` when a release stores something an older copy would damage when it saves.
 
 ## Backwards compatibility (rules)
 - Never rename or remove stored keys or preset strings. Add new fields with defaults in `pageDefaults`/`defaultSettings`, and normalize them in `getPage`/`normalizeSettings`.
 - A project saved by any earlier version must lay out exactly as before. Check this by running the old `layout.js` from git against the current one (method in notes.md).
 - Don't change the IndexedDB name or version, or the `.zine` layout (`project.json` plus `photos/<id>`), without a migration.
-- Any code that walks photo references must include `pics` and `wrap`. Use `Z.photoRefs`.
+- Any code that walks photo references must include `pics` and `wrap`. Use `Z.photoRefs`. Code that walks `pages` keys must skip `keep:` keys if it can see stored data.
 
 ## Testing
 - Layout and PDF: Node scripts that `require('./layout.js')` and `require('./pdf.js')` and build both PDF modes with the real fonts and a stub `getCrop`.

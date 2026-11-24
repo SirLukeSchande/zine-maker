@@ -1,5 +1,5 @@
 /* Offline cache. Bump VERSION on every release. */
-var VERSION = 'zine-v8';
+var VERSION = 'zine-v9';
 var FILES = ['./', 'index.html', 'style.css', 'app.js', 'layout.js', 'pdf.js', 'store.js', 'pdf-lib.min.js', 'fontkit.umd.min.js', 'jszip.min.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 ['inter','dm-sans','space-grotesk','work-sans','archivo','ibm-plex-mono','eb-garamond','cormorant-garamond','playfair-display','libre-baskerville'].forEach(function (f) { FILES.push('f-' + f + '-400.ttf', 'f-' + f + '-700.ttf'); });
 self.addEventListener('install', function (e) {
