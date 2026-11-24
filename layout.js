@@ -3,13 +3,22 @@
   'use strict';
 
   var PT_PER_CM = 72 / 2.54;
-  var PRESETS = ['fill page', 'portrait 4:3', 'portrait 3:2', 'landscape 4:3', 'landscape 3:2', 'landscape 1:2', 'landscape 65:24'];
-  var SPREAD_PRESETS = ['fill page', 'landscape 4:3', 'landscape 3:2', 'landscape 1:2', 'landscape 65:24'];
-  var RATIO = {
-    'portrait 4:3': 3 / 4, 'portrait 3:2': 2 / 3,
-    'landscape 4:3': 4 / 3, 'landscape 3:2': 3 / 2,
-    'landscape 1:2': 2, 'landscape 65:24': 65 / 24
+  /* A frame preset is 'fill page' or '<orientation> <ratio>'; a ratio is long side : short side, except the legacy '1:2'. */
+  var ORIENTS = ['portrait', 'landscape'];
+  var RATIOS = ['1:1', '4:3', '3:2', '1:2', '65:24'];
+  var combos = function (orients) {
+    var out = ['fill page'];
+    orients.forEach(function (o) { RATIOS.forEach(function (r) { out.push(o + ' ' + r); }); });
+    return out;
   };
+  var PRESETS = combos(ORIENTS);
+  var SPREAD_PRESETS = combos(['landscape']);
+  var RATIO = {};  // preset -> width / height
+  PRESETS.forEach(function (p) {
+    if (p === 'fill page') return;
+    var a = p.split(' '), n = a[1].split(':'), r = Math.max(+n[0], +n[1]) / Math.min(+n[0], +n[1]);
+    RATIO[p] = a[0] === 'portrait' ? 1 / r : r;
+  });
   var FONTS = [
     { id: 'inter', name: 'Inter' },
     { id: 'dm-sans', name: 'DM Sans' },
@@ -338,7 +347,7 @@
   }
 
   var api = {
-    PT_PER_CM: PT_PER_CM, GAP: GAP, PRESETS: PRESETS, SPREAD_PRESETS: SPREAD_PRESETS, RATIO: RATIO, FONTS: FONTS, DIN: DIN, SLUG: SLUG,
+    PT_PER_CM: PT_PER_CM, GAP: GAP, ORIENTS: ORIENTS, RATIOS: RATIOS, PRESETS: PRESETS, SPREAD_PRESETS: SPREAD_PRESETS, RATIO: RATIO, FONTS: FONTS, DIN: DIN, SLUG: SLUG,
     clamp: clamp, round1: round1, defaultSettings: defaultSettings, normalizeSettings: normalizeSettings,
     defaultProject: defaultProject, newId: newId, pageDefaults: pageDefaults, getPage: getPage, spreadInfo: spreadInfo,
     wrapInfo: wrapInfo, wideAt: wideAt, pageRole: pageRole, layoutPage: layoutPage, layoutSpread: layoutSpread, imposition: imposition, sheetGeo: sheetGeo,

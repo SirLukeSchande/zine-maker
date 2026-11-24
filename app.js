@@ -485,14 +485,12 @@
       }
 
       var cur = slot === 'spread' ? p.s.spreadPreset : slot === 'wrap' ? p.s.wrapPreset : sub ? pgd.pics[sub.i - 1].preset : pgd.preset;
-      var sel = h('select', { value: cur, onChange: function (e) {
-        if (slot === 'spread') p.s.spreadPreset = e.target.value;
-        else if (slot === 'wrap') p.s.wrapPreset = e.target.value;
-        else slotObj(slot).preset = e.target.value;
+      kids.push.apply(kids, frameRows(pgd && pgd.count > 1 ? 'Frame ' + (sub ? sub.i + 1 : 1) : 'Frame', cur, presets, function (v) {
+        if (slot === 'spread') p.s.spreadPreset = v;
+        else if (slot === 'wrap') p.s.wrapPreset = v;
+        else slotObj(slot).preset = v;
         save(); renderBody(); renderInspector();
-      } }, presets.map(function (t) { return h('option', { value: t }, cap(t)); }));
-      sel.value = cur;
-      kids.push(h('label', { class: 'row' }, h('span', { class: 'lab' }, pgd && pgd.count > 1 ? 'Frame ' + (sub ? sub.i + 1 : 1) : 'Frame'), sel));
+      }));
 
       var has = !!slotPhoto(slot);
       kids.push(h('div', { class: 'row-btns' },
@@ -527,6 +525,30 @@
       kids.push(h('p', { class: 'mute' }, 'Blank page.'));
     }
     inspEl.replaceChildren.apply(inspEl, kids);
+  }
+
+  /* Two menus for one frame preset: fill page / portrait / landscape, then the ratio (hidden for fill page). */
+  function frameRows(label, cur, presets, set) {
+    var cap = function (t) { return t.charAt(0).toUpperCase() + t.slice(1); };
+    var parts = cur.split(' '), orient = cur === 'fill page' ? cur : parts[0], ratio = cur === 'fill page' ? null : parts[1];
+    var orients = ['fill page'].concat(Z.ORIENTS).filter(function (o) {
+      return o === 'fill page' ? presets.indexOf(o) >= 0 : presets.some(function (t) { return t.indexOf(o + ' ') === 0; });
+    });
+    var oSel = h('select', { onChange: function () {
+      var o = oSel.value;
+      if (o === 'fill page') return set(o);
+      var r = ratio && presets.indexOf(o + ' ' + ratio) >= 0 ? ratio : '4:3';
+      set(o + ' ' + r);
+    } }, orients.map(function (o) { return h('option', { value: o }, cap(o)); }));
+    oSel.value = orient;
+    var rows = [h('label', { class: 'row' }, h('span', { class: 'lab' }, label), oSel)];
+    if (ratio) {
+      var rSel = h('select', { onChange: function () { set(orient + ' ' + rSel.value); } },
+        Z.RATIOS.filter(function (r) { return presets.indexOf(orient + ' ' + r) >= 0; }).map(function (r) { return h('option', { value: r }, r); }));
+      rSel.value = ratio;
+      rows.push(h('label', { class: 'row' }, h('span', { class: 'lab' }, 'Aspect ratio'), rSel));
+    }
+    return rows;
   }
 
   /* Number of pictures on a page; pictures beyond the count stay stored and come back when it is raised. */
@@ -714,10 +736,10 @@
         selectRow('Sewing holes', 'holes', holes)),
       h('section', {}, h('h3', {}, 'Middle spread'),
         checkRow('One picture across the middle two pages (needs 8+ pages). Off: two separate pages with their own pictures', 'spreadOn'),
-        selectRow('Spread frame', 'spreadPreset', Z.SPREAD_PRESETS.map(function (t) { return [t, t.charAt(0).toUpperCase() + t.slice(1)]; }))),
+        frameRows('Spread frame', p.s.spreadPreset, Z.SPREAD_PRESETS, function (v) { setS('spreadPreset', v); drawSettings(); })),
       h('section', {}, h('h3', {}, 'Cover'),
         checkRow('One picture wrapping around the back and front cover', 'wrapOn'),
-        selectRow('Wrap frame', 'wrapPreset', Z.SPREAD_PRESETS.map(function (t) { return [t, t.charAt(0).toUpperCase() + t.slice(1)]; }))),
+        frameRows('Wrap frame', p.s.wrapPreset, Z.SPREAD_PRESETS, function (v) { setS('wrapPreset', v); drawSettings(); })),
       h('section', {}, h('h3', {}, 'Type'),
         selectRow('Body font', 'fontBody', fontOpts),
         selectRow('Title font', 'fontTitle', fontOpts),
