@@ -346,12 +346,32 @@
     return list;
   }
 
+  /* photoId -> slots that hold it, across all stored data (hidden pages included) */
+  function photoRefs(proj) {
+    var refs = {}, add = function (id, slot) { if (id) (refs[id] = refs[id] || []).push(slot); };
+    Object.keys(proj.pages || {}).forEach(function (k) {
+      var pg = proj.pages[k], n = +k; if (!pg) return;
+      add(pg.photo, n);
+      (pg.pics || []).forEach(function (q, i) { if (q) add(q.photo, n + ':' + (i + 1)); });
+    });
+    if (proj.spread) add(proj.spread.photo, 'spread');
+    if (proj.wrap) add(proj.wrap.photo, 'wrap');
+    return refs;
+  }
+
+  /* photos no slot holds, oldest first */
+  function unplacedPhotos(proj) {
+    var refs = photoRefs(proj);
+    return Object.keys(proj.photos || {}).filter(function (id) { return !refs[id]; });
+  }
+
   var api = {
     PT_PER_CM: PT_PER_CM, GAP: GAP, ORIENTS: ORIENTS, RATIOS: RATIOS, PRESETS: PRESETS, SPREAD_PRESETS: SPREAD_PRESETS, RATIO: RATIO, FONTS: FONTS, DIN: DIN, SLUG: SLUG,
     clamp: clamp, round1: round1, defaultSettings: defaultSettings, normalizeSettings: normalizeSettings,
     defaultProject: defaultProject, newId: newId, pageDefaults: pageDefaults, getPage: getPage, spreadInfo: spreadInfo,
     wrapInfo: wrapInfo, wideAt: wideAt, pageRole: pageRole, layoutPage: layoutPage, layoutSpread: layoutSpread, imposition: imposition, sheetGeo: sheetGeo,
-    jigInfo: jigInfo, sheetLabel: sheetLabel, cropRegion: cropRegion, wrapText: wrapText, photoPages: photoPages
+    jigInfo: jigInfo, sheetLabel: sheetLabel, cropRegion: cropRegion, wrapText: wrapText, photoPages: photoPages,
+    photoRefs: photoRefs, unplacedPhotos: unplacedPhotos
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ZL = api;
 })(typeof self !== 'undefined' ? self : this);

@@ -111,10 +111,18 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* settings, export */
 .settings,.export{max-width:620px;margin:0 auto}
 .settings section{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:4px 16px 12px;margin:14px 0}
-.settings h3{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);margin:14px 0 4px}
+.settings h3,.photos h3{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);margin:14px 0 4px}
 .settings section>select{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 10px;min-height:40px;margin-top:8px}
 .readout{background:var(--ink);color:var(--bg);border-radius:var(--r);padding:12px 16px;font-size:13px;position:sticky;top:0;z-index:2}
 progress{width:100%;height:8px;accent-color:var(--acc);margin:10px 0 4px}
 .result{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 16px;margin:12px 0}
 .toast{position:fixed;left:50%;bottom:max(20px,env(safe-area-inset-bottom));transform:translate(-50%,30px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;pointer-events:none;transition:.2s;z-index:50;max-width:90vw;text-align:center}
 .toast.on{opacity:1;transform:translate(-50%,0)}
+.photos{max-width:760px}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;margin:8px 0 16px}
+.thumbs.small{grid-template-columns:repeat(auto-fill,minmax(56px,1fr));margin-top:4px}
+.thumb{position:relative;aspect-ratio:1;background:#ebeae6;border-radius:6px;overflow:hidden}
+.thumb.tap{cursor:pointer}.thumb[draggable=true]{cursor:grab}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.thumb .cap{position:absolute;left:0;right:0;bottom:0;padding:2px 5px;font-size:10px;background:rgba(0,0,0,.55);color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thumb .x{position:absolute;top:3px;right:3px;width:24px;height:24px;border-radius:12px;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:16px;line-height:24px;padding:0;cursor:pointer}

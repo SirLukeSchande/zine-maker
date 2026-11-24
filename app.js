@@ -129,6 +129,7 @@
       p.spread.crop = p.spread.crop || { cx: 0.5, cy: 0.5, z: 1 };
       p.wrap = p.wrap || { photo: null, crop: { cx: 0.5, cy: 0.5, z: 1 } };
       p.wrap.crop = p.wrap.crop || { cx: 0.5, cy: 0.5, z: 1 };
+      releaseHidden(p);
       S.proj = p; S.view = 'editor'; S.tab = 'pages'; S.sel = window.innerWidth >= 900 ? 1 : null; S.result = null; revokeUrls();
       buildEditor();
       var ids = Object.keys(p.photos);
@@ -139,7 +140,7 @@
   }
 
   /* ---------- editor shell ---------- */
-  var tabNames = [['pages', 'Pages'], ['sheets', 'Sheets'], ['settings', 'Settings'], ['export', 'Export']];
+  var tabNames = [['pages', 'Pages'], ['photos', 'Photos'], ['sheets', 'Sheets'], ['settings', 'Settings'], ['export', 'Export']];
   var bodyEl = null, inspEl = null;
 
   function buildEditor() {
@@ -170,24 +171,25 @@
     bodyEl.scrollTop = 0;
   }
 
-  function leaveEditor() {
-    gcPhotos().then(function () { return flushSave(); }).then(showHome);
-  }
+  function leaveEditor() { showHome(); }
 
-  function gcPhotos() {
-    var used = {}, p = S.proj;
-    Object.keys(p.pages).forEach(function (k) {
-      var pg = p.pages[k]; if (!pg) return;
-      if (pg.photo) used[pg.photo] = 1;
-      (pg.pics || []).forEach(function (q) { if (q && q.photo) used[q.photo] = 1; });
-    });
-    if (p.spread.photo) used[p.spread.photo] = 1;
-    if (p.wrap.photo) used[p.wrap.photo] = 1;
-    return Promise.all(Object.keys(p.photos).filter(function (id) { return !used[id]; }).map(function (id) {
+  /* Photos no frame holds are the unplaced photos; they stay until deleted here, the only way a photo leaves a zine. */
+  function deletePhotos(ids) {
+    var p = S.proj, refs = Z.photoRefs(p);
+    return Promise.all(ids.filter(function (id) { return !refs[id]; }).map(function (id) {
       delete p.photos[id];
       if (S.urls[id]) { URL.revokeObjectURL(S.urls[id]); delete S.urls[id]; }
       return Store.deletePhoto(p.id, id);
-    }));
+    })).then(function () { save(); renderBody(); renderInspector(); });
+  }
+
+  /* Pictures beyond a page's count used to stay parked in pics; they now go to the unplaced photos. */
+  function releaseHidden(p) {
+    Object.keys(p.pages).forEach(function (k) {
+      var pg = p.pages[k]; if (!pg || !pg.pics) return;
+      var c = Z.getPage(p, +k).count;
+      pg.pics.forEach(function (q, i) { if (q && q.photo && i + 1 >= c) { q.photo = null; q.crop = { cx: 0.5, cy: 0.5, z: 1 }; } });
+    });
   }
 
   /* ---------- slots ---------- */
@@ -252,26 +254,27 @@
   function addFiles(files, slot) {
     files = Array.prototype.slice.call(files || []).filter(function (f) { return !f.type || /^image\//.test(f.type); });
     if (!files.length) return Promise.resolve();
-    var slots = Z.photoPages(S.proj), start = slots.indexOf(slot);
-    var targets = [slot];
+    // fill the picked frame and the empty ones after it; the rest go to the unplaced photos
+    var slots = Z.photoPages(S.proj), start = slot == null ? -1 : slots.indexOf(slot);
+    var targets = slot == null ? [] : [slot];
     if (start >= 0) targets = targets.concat(slots.slice(start + 1).filter(function (s) { return !slotPhoto(s); }));
-    var failed = 0, skipped = 0, placed = 0;
+    var failed = 0, pooled = 0, placed = 0;
     var chain = Promise.resolve();
     files.forEach(function (f, i) {
       chain = chain.then(function () {
-        if (i >= targets.length) { skipped++; return; }
         toast('Adding photo ' + (i + 1) + ' of ' + files.length + '…', 0);
         return ingest(f).then(function (id) {
+          if (i >= targets.length) { pooled++; return; }
           var o = slotObj(targets[i]); o.photo = id; o.crop = { cx: 0.5, cy: 0.5, z: 1 }; placed++;
         }).catch(function () { failed++; });
       });
     });
     return chain.then(function () {
       save(); renderBody(); renderInspector();
-      var msg = placed + ' photo' + (placed === 1 ? '' : 's') + ' added.';
-      if (skipped) msg += ' ' + skipped + ' did not fit; add pages or free up frames.';
+      var added = placed + pooled, msg = added + ' photo' + (added === 1 ? '' : 's') + ' added' +
+        (!pooled ? '.' : placed ? ', ' + pooled + ' to unplaced photos.' : ' to unplaced photos.');
       if (failed) msg += ' ' + failed + ' could not be read (HEIC from a desktop browser?).';
-      toast(msg, skipped || failed ? 6000 : 2200);
+      toast(msg, failed ? 6000 : pooled && placed ? 4000 : 2200);
     });
   }
 
@@ -282,6 +285,26 @@
   });
 
   function pick(slot) { S.pickSlot = slot; fileInput.click(); }
+
+  function place(slot, id) {
+    var o = slotObj(slot); o.photo = id; o.crop = { cx: 0.5, cy: 0.5, z: 1 };
+    S.sel = slot; save(); renderBody(); renderInspector();
+  }
+
+  function thumbEl(id, o) {
+    var t = h('div', { class: 'thumb' + (o.onClick ? ' tap' : ''), title: (S.proj.photos[id] || {}).name, onClick: o.onClick },
+      S.urls[id] ? h('img', { src: S.urls[id], alt: '', draggable: 'false' }) : null,
+      o.label ? h('span', { class: 'cap' }, o.label) : null,
+      o.del ? h('button', { class: 'x', 'aria-label': 'Delete photo', onClick: function (ev) {
+        ev.stopPropagation();
+        if (confirm('Delete this photo from the zine and this device?')) deletePhotos([id]);
+      } }, '×') : null);
+    if (o.drag) {
+      t.draggable = true;
+      t.addEventListener('dragstart', function (ev) { ev.dataTransfer.setData('text/x-zine-photo', id); ev.dataTransfer.effectAllowed = 'move'; });
+    }
+    return t;
+  }
 
   /* ---------- page rendering ---------- */
   function fontCss(id, bold) { return '"zf-' + id + '",system-ui,sans-serif;font-weight:' + (bold ? 700 : 400); }
@@ -316,7 +339,9 @@
       fr.addEventListener('dragleave', function () { fr.classList.remove('drop'); });
       fr.addEventListener('drop', function (ev) {
         ev.preventDefault(); fr.classList.remove('drop');
-        if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) { S.sel = slot; addFiles(ev.dataTransfer.files, slot); }
+        var pid = ev.dataTransfer && ev.dataTransfer.getData('text/x-zine-photo');
+        if (pid && S.proj.photos[pid]) place(slot, pid);
+        else if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) { S.sel = slot; addFiles(ev.dataTransfer.files, slot); }
       });
     }
     return fr;
@@ -394,6 +419,7 @@
   function renderBody() {
     if (!bodyEl) return;
     if (S.tab === 'pages') drawPages();
+    else if (S.tab === 'photos') drawPhotos();
     else if (S.tab === 'sheets') drawSheets();
     else if (S.tab === 'settings') drawSettings();
     else drawExport();
@@ -496,7 +522,12 @@
       kids.push(h('div', { class: 'row-btns' },
         h('button', { class: 'btn primary', onClick: function () { pick(slot); } }, has ? 'Replace photo…' : 'Choose photos…'),
         has ? h('button', { class: 'btn', onClick: function () { slotObj(slot).photo = null; save(); renderBody(); renderInspector(); } }, 'Remove') : null));
-      if (!has) kids.push(h('p', { class: 'mute small' }, 'Pick several at once and they fill the next empty photo frames in order. On a computer you can also drop files onto a frame.'));
+      var pool = Z.unplacedPhotos(p);
+      if (pool.length) {
+        kids.push(h('p', { class: 'mute small' }, 'Unplaced photos: tap one to put it here.'));
+        kids.push(h('div', { class: 'thumbs small' }, pool.map(function (id) { return thumbEl(id, { drag: true, onClick: function () { place(slot, id); } }); })));
+      }
+      if (!has) kids.push(h('p', { class: 'mute small' }, 'Pick several at once and they fill the next empty photo frames in order; the rest wait in unplaced photos. On a computer you can also drop files onto a frame.'));
       if (has) {
         var crop = slotCrop(slot);
         kids.push(h('label', { class: 'row' }, h('span', { class: 'lab' }, 'Zoom'),
@@ -551,10 +582,11 @@
     return rows;
   }
 
-  /* Number of pictures on a page; pictures beyond the count stay stored and come back when it is raised. */
+  /* Number of pictures on a page; pictures beyond the count go to the unplaced photos, their frames stay. */
   function setCount(n, c) {
-    var pg = Z.getPage(S.proj, n), i;
+    var pg = Z.getPage(S.proj, n), pics = slotObj(n).pics || [], i;
     slotObj(n).count = c;
+    for (i = c - 1; i < pics.length; i++) if (pics[i] && pics[i].photo) { pics[i].photo = null; pics[i].crop = { cx: 0.5, cy: 0.5, z: 1 }; }
     // a newly shown picture starts with the first picture's frame
     for (i = pg.count; i < c; i++) if (!slotObj(n + ':' + i).preset) slotObj(n + ':' + i).preset = pg.preset;
     var sub = subOf(S.sel);
@@ -589,6 +621,27 @@
     // captions belong to the page, so they only travel between first pictures
     (subOf(list[i]) || subOf(list[j]) ? ['photo', 'crop'] : ['photo', 'crop', 'caption']).forEach(function (k) { var t = a[k]; a[k] = b[k]; b[k] = t; });
     S.sel = list[j]; save(); renderBody(); renderInspector();
+  }
+
+  /* ---------- body: photos ---------- */
+  function drawPhotos() {
+    var p = S.proj, refs = Z.photoRefs(p), pool = Z.unplacedPhotos(p), shown = Z.photoPages(p);
+    var all = Object.keys(p.photos), placed = all.filter(function (id) { return refs[id]; });
+    bodyEl.replaceChildren(h('div', { class: 'photos' },
+      h('p', {}, all.length + ' photo' + (all.length === 1 ? '' : 's') + ' · ' + pool.length + ' unplaced'),
+      h('div', { class: 'row-btns' },
+        h('button', { class: 'btn primary', onClick: function () { pick(null); } }, 'Add photos…'),
+        pool.length ? h('button', { class: 'btn danger', onClick: function () {
+          if (confirm('Delete ' + pool.length + ' unplaced photo' + (pool.length === 1 ? '' : 's') + ' from the zine and this device?')) deletePhotos(pool);
+        } }, 'Delete unplaced…') : null),
+      h('h3', {}, 'Unplaced'),
+      pool.length ? h('div', { class: 'thumbs' }, pool.map(function (id) { return thumbEl(id, { del: true, drag: true }); }))
+        : h('p', { class: 'mute small' }, 'Photos that don’t fit a frame, or that leave one, wait here. Select a frame on the Pages tab to place them.'),
+      placed.length ? h('h3', {}, 'Placed') : null,
+      placed.length ? h('div', { class: 'thumbs' }, placed.map(function (id) {
+        var slot = refs[id][0], vis = shown.indexOf(slot) >= 0;
+        return thumbEl(id, { label: slotLabel(slot) + (vis ? '' : ' (hidden)'), onClick: vis ? function () { setTab('pages'); select(slot); } : null });
+      })) : null));
   }
 
   /* ---------- body: sheets preview ---------- */
@@ -871,7 +924,7 @@
   function exportZine() {
     if (S.busy) return;
     S.busy = 'zine'; setProgress(0.05, 'Packing project…');
-    gcPhotos().then(flushSave).then(function () {
+    flushSave().then(function () {
       var zip = new JSZip(), ids = Object.keys(S.proj.photos);
       zip.file('project.json', JSON.stringify(S.proj));
       return ids.reduce(function (chain, id, i) {

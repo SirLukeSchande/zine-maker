@@ -3,17 +3,18 @@
 How the app got to where it is, and why things are the way they are. Newest last.
 
 ## Backwards compatibility statement
-*Checked on 2026-11-24 against commit 6f85a15.*
+*Checked on 2026-11-24 against commit 6f85a15; rechecked with the unplaced photos pool.*
 
 **Older projects open unchanged in the current app.** Every project saved by an earlier version (f251da8, 8d5b411, cabebf8, 459557d), whether stored in the browser or saved as a `.zine` file, loads in the current app and lays out exactly as before.
 - Test: each old `layout.js` was taken from git and given a sample project the way that version stored it. The sample covered a cover photo, framed and filled pictures, captions, text and blank pages, crops, the middle spread at 65:24, the wraparound cover (where that version had it), and 8 and 16 pages. Every page, the spread and wrap layouts, and the photo order matched the current `layout.js` exactly, with 0 differences.
 - The IndexedDB store (`zine-maker` v1), the `.zine` format (`project.json` plus `photos/<id>`) and the project version (`v: 1`) have not changed since the first commit.
 - Every preset name that was ever stored still exists. New fields (`count`, `dir`, `gap`, `fit`, `pics`, `wrapOn`, `wrapPreset`) have defaults, so old data simply doesn't have them.
+- The unplaced photos pool added no stored field. On open, photos parked in `pics` beyond a page's count (possible from cabebf8 to 6f85a15) move to the pool; the pages look the same.
 
 **Newer projects in an older copy of the app (forward compatibility) are not safe.** An installed copy that hasn't updated yet, or an old checkout, may open a project made with newer features:
 - It shows only the first picture on a page, and draws unknown frames such as 1:1 as portrait 4:3.
 - In versions before 8d5b411, `normalizeSettings` drops `wrapOn`/`wrapPreset`.
-- **Possible photo loss:** when you leave the editor, older versions delete photos they think are unused. Pictures 2 and 3 on a page (all versions before cabebf8) and the wraparound picture (before 8d5b411) count as unused, so their stored photos get deleted.
+- **Possible photo loss:** when you leave the editor, older versions delete photos they think are unused. That always includes **every unplaced photo** (all older versions), plus pictures 2 and 3 on a page (before cabebf8) and the wraparound picture (before 8d5b411).
 - Mitigation for now: bump `sw.js` `VERSION` on every release so installed copies update. Plan.md has a proper guard.
 
 ## Starting point (f251da8)
@@ -42,7 +43,16 @@ Export crashed for Archivo 400, IBM Plex Mono and Space Grotesk. fontkit's `TTFG
 - Spread and wrap frames stay landscape-only (a portrait frame across the fold makes no sense).
 - First browser-pane test: caught the inspector pushing an array into `replaceChildren` (rendered as text). Fixed with `kids.push.apply`.
 
+## Unplaced photos pool
+- Asked for: loading more photos than there are open frames, and keeping photos when a page's picture count is lowered. Planned in plan mode; decisions by the user:
+  - Lowering the count moves the pictures that no longer fit into the pool. Raising it again gives empty frames.
+  - Remove and Replace send the old photo to the pool. Photos leave only through an explicit Delete.
+  - UI: tap-to-place thumbnails in the inspector, plus a Photos tab (overview, Add photos, Delete unplaced, tap a placed photo to jump to it).
+- Design: the pool is implicit (photos nothing references), so the format didn't change and `.zine` files carry the pool for free. `gcPhotos` was removed. Photos on hidden pages stay referenced and show as "hidden" in the Photos tab.
+- On desktop, pool thumbnails can be dragged onto a frame (`text/x-zine-photo`).
+- Checked in Node (helpers, layout compatibility, PDFs skip unplaced photos) and in the browser pane: overflow on load, lowering and raising the count, Remove, Replace, tap and drag placement, reopening, `.zine` round trip, migration of parked pictures, Delete unplaced.
+
 ## How we work
 - Each feature: change `layout.js` first and check the numbers in Node, then the UI in `app.js`, then make sure both PDF modes still build in Node. Since 6f85a15 the UI is also checked in the browser pane.
-- Bump `sw.js` `VERSION` in every release commit (currently `zine-v7`).
+- Bump `sw.js` `VERSION` in every release commit (currently `zine-v8`).
 - The user reviews, then asks to commit and push to `master`.

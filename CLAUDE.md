@@ -25,12 +25,13 @@ See [notes.md](notes.md) for how features were built, [Plan.md](Plan.md) for ope
 - `spread` and `wrap`: two-page pictures, with frames stored in `s.spreadPreset` and `s.wrapPreset`.
 - Presets are `'fill page'` or `'<portrait|landscape> <ratio>'`, built from `ORIENTS` × `RATIOS` in `layout.js`. Ratios are written long:short, except the legacy `'1:2'` (which means 2:1 landscape). To add a ratio, add one entry to `RATIOS`.
 - Slots in the UI: a page number, `'spread'`, `'wrap'`, or `'n:i'` for picture i+1 on page n (i = 1, 2).
+- Unplaced photos have no stored field: they are the photos in `photos` that no slot references (`photoRefs`/`unplacedPhotos` in `layout.js`). **The app never deletes photos automatically.** Only the Photos tab's Delete removes them, and only unplaced ones. Pictures beyond a page's `count` must not keep a photo: `setCount` and `releaseHidden` (on open) move them to the pool.
 
 ## Backwards compatibility (rules)
 - Never rename or remove stored keys or preset strings. Add new fields with defaults in `pageDefaults`/`defaultSettings`, and normalize them in `getPage`/`normalizeSettings`.
 - A project saved by any earlier version must lay out exactly as before. Check this by running the old `layout.js` from git against the current one (method in notes.md).
 - Don't change the IndexedDB name or version, or the `.zine` layout (`project.json` plus `photos/<id>`), without a migration.
-- Any code that walks photo references (`gcPhotos`, the PDF progress count) must include `pics` and `wrap`.
+- Any code that walks photo references must include `pics` and `wrap`. Use `Z.photoRefs`.
 
 ## Testing
 - Layout and PDF: Node scripts that `require('./layout.js')` and `require('./pdf.js')` and build both PDF modes with the real fonts and a stub `getCrop`.
