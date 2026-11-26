@@ -3,16 +3,18 @@
 How the app got to where it is, and why things are the way they are. Newest last.
 
 ## Backwards compatibility statement
-*Checked on 2026-11-24 against commit 6f85a15; rechecked with the unplaced photos pool and the keep stubs.*
+*Checked on 2026-11-24 against commit 6f85a15; rechecked with the unplaced photos pool, the keep stubs, 64 pages (f24a406) and the photo's own aspect ratio (9adf490).*
 
 **Older projects open unchanged in the current app.** Every project saved by an earlier version (f251da8, 8d5b411, cabebf8, 459557d), whether stored in the browser or saved as a `.zine` file, loads in the current app and lays out exactly as before.
 - Test: each old `layout.js` was taken from git and given a sample project the way that version stored it. The sample covered a cover photo, framed and filled pictures, captions, text and blank pages, crops, the middle spread at 65:24, the wraparound cover (where that version had it), and 8 and 16 pages. Every page, the spread and wrap layouts, and the photo order matched the current `layout.js` exactly, with 0 differences.
 - The IndexedDB store (`zine-maker` v1), the `.zine` format (`project.json` plus `photos/<id>`) and the project version (`v: 1`) have not changed since the first commit.
-- Every preset name that was ever stored still exists. New fields (`count`, `dir`, `gap`, `fit`, `pics`, `wrapOn`, `wrapPreset`) have defaults, so old data simply doesn't have them.
+- Every preset name that was ever stored still exists. New fields (`count`, `dir`, `gap`, `fit`, `pics`, `wrapOn`, `wrapPreset`, `native`) have defaults, so old data simply doesn't have them.
 - The unplaced photos pool added no stored field. On open, photos parked in `pics` beyond a page's count (possible from cabebf8 to 6f85a15) move to the pool; the pages look the same.
 
 **Newer projects in an older copy of the app (forward compatibility): photos are safe, some settings are not.** An installed copy that hasn't updated yet, or an old checkout, may open a project made with newer features:
 - It shows only the first picture on a page, and draws unknown frames such as 1:1 as portrait 4:3.
+- It draws frames set to the photo's own ratio (`native`) at their chosen ratio, and keeps the field when it saves.
+- It cuts a zine with more than 32 pages back to 32 when it saves. Such projects are stored at data level 3, so copies at level 2 warn first; older ones don't.
 - In versions before 8d5b411, `normalizeSettings` drops `wrapOn`/`wrapPreset` when it saves.
 - **No photo loss any more:** older versions delete photos they think are unused when you leave the editor. Saved data now has keep stubs that make every photo look used to all of them (see "Guard against older copies"). Tested with every old `gcPhotos` and with a7452b1 running in the browser.
 - Any app from now on warns when it opens a project saved at a higher data level (`app`).
@@ -61,7 +63,16 @@ Export crashed for Archivo 400, IBM Plex Mono and Space Grotesk. fontkit's `TTFG
 - New field `app` (data level, 2) for the future: opening a project with a higher level shows "saved by a newer version" (it can't help copies older than this one).
 - Checked: Node runs every old `gcPhotos` against saved data (without stubs they delete up to 6 of 11 test photos, with stubs none), old `layout.js` versions lay out the same with stubs, and the compatibility run still shows 0 differences. In the browser pane: startup adds stubs, the Photos tab ignores them, a7452b1 served from the same origin opened the zine and kept all photos (without stubs it deleted both unplaced ones), and the newer-version warning shows.
 
-## Photo's own aspect ratio
+## Crop mark check
+- All marks on every sheet, front and back, were checked in Node against the sheet geometry: corner marks on the trim lines, starting bleed + 0.1 cm (at least 0.3 cm) outside the trim, 0.8 cm long; fold marks at the spine; back marks an exact mirror of the front, so they line up after the short-edge flip; piercing jig marks on its own trim box. Tried with 4 to 64 pages, bleed 0 to 0.5 cm, creep, A2 to A4, filled spread and wraparound cover. All aligned, nothing changed.
+- Extra horizontal marks next to the fold mark were considered and dropped: on the trim line they would sit on the bleed.
+
+## Up to 64 pages (f24a406)
+- Only `normalizeSettings` and the Pages slider capped it at 32. Imposition, creep, jig and paper choice already work for any multiple of 4.
+- A level 2 copy would save a bigger zine as 32 pages, so `stored()` writes data level 3 only for projects with more than 32 pages; smaller ones stay at 2 and don't trigger the warning in older copies.
+- Checked in Node: 48 and 64 pages build in both PDF modes, crop mark check passes, 4 to 32 pages lay out as before.
+
+## Photo's own aspect ratio (9adf490)
 - New field `native` on each framed picture (`pages[n]`, `pics[i]`, `spread`, `wrap`). When it's on and the frame has a photo, `frameRatio` uses the photo's `w / h` instead of the preset's ratio. The preset stays stored, so the inspector's "Use: Chosen ratio / Photo's ratio" switch flips between the two. Picking a ratio from the frame menus switches it off.
 - `putPhoto` sets it when a photo goes into an empty frame (pick, drop, pool tap, filling the following empty frames, split/join). A two-page frame gets it only for a landscape photo, since a portrait one would be a narrow strip across the fold. Replacing a photo keeps the frame's setting. Earlier/Later moves `native` with the photo.
 - No data level raise: older copies ignore the field and show the chosen ratio, and they keep it when they save.

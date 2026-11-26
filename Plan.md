@@ -9,6 +9,8 @@ Open work and ideas. No priorities set yet. Move items to notes.md once done.
 ## Testing
 - [ ] Keep a small Node test for layout and PDF output (both modes, all fonts) in the repo instead of ad-hoc scripts.
 - [ ] Browser-pane smoke test checklist: new zine, pick photos, multi-picture page, frame and ratio menus, export both PDFs.
+- [ ] Check the photo's own aspect ratio in the browser pane (not done for 9adf490): empty frame takes the photo's shape, the Chosen ratio / Photo's ratio switch, dimmed menus switching back, spread with a portrait photo, Earlier/Later.
+- [ ] Add the crop mark check (all sheets, front and back, mirror after the flip) to the Node test.
 
 ## Ideas
 - [ ] Per-page caption under each picture on multi-picture pages (right now there's one caption per page).
