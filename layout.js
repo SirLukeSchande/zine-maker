@@ -93,7 +93,8 @@
       count: 1, dir: 'row',      // up to 3 pictures, side by side ('row') or stacked ('column')
       gap: GAP,                  // cm between them
       fit: 'match',              // 'match': framed pictures share one height (side by side) or width (stacked); 'equal': equal parts
-      pics: [] };                // pictures 2 and 3: [{ photo, crop, preset }]
+      native: false,             // frame takes the photo's own aspect ratio instead of the preset's (preset is kept to switch back)
+      pics: [] };                // pictures 2 and 3: [{ photo, crop, preset, native }]
   }
 
   function normCrop(c) {
@@ -111,10 +112,11 @@
     r.fit = r.fit === 'equal' ? 'equal' : 'match';
     r.gap = clamp(isNaN(+r.gap) ? GAP : +r.gap, 0, 3);
     if (PRESETS.indexOf(r.preset) < 0) r.preset = d.preset;
+    r.native = !!r.native;
     var pics = o.pics || [];
     r.pics = [0, 1].map(function (i) {
       var q = pics[i] || {};
-      return { photo: q.photo || null, crop: normCrop(q.crop), preset: PRESETS.indexOf(q.preset) < 0 ? r.preset : q.preset };
+      return { photo: q.photo || null, crop: normCrop(q.crop), preset: PRESETS.indexOf(q.preset) < 0 ? r.preset : q.preset, native: !!q.native };
     });
     return r;
   }
@@ -143,6 +145,16 @@
   function wideAt(proj, n) {
     var r = pageRole(proj, n);
     return r === 'spread-l' || r === 'spread-r' ? 'spread' : r === 'wrap-l' || r === 'wrap-r' ? 'wrap' : null;
+  }
+
+  /* width / height of the photo itself, or null */
+  function photoRatio(proj, id) {
+    var m = id && proj.photos && proj.photos[id];
+    return m && m.w > 0 && m.h > 0 ? m.w / m.h : null;
+  }
+  /* width / height of a framed picture {photo, preset, native}: the photo's own when native, else the preset's */
+  function frameRatio(proj, q, dflt) {
+    return (q.native && photoRatio(proj, q.photo)) || RATIO[q.preset] || dflt;
   }
 
   /* Elements are in page-local cm, origin top-left of the trimmed page. */
@@ -181,14 +193,14 @@
             // next to a filled picture, stay out of its part
             if (fill) { px0 = Math.max(px0, x0); py0 = Math.max(py0, y0); px1 = Math.min(px1, x1); py1 = Math.min(py1, y1); }
             x0 = px0; y0 = py0;
-            var r = RATIO[pics[i].preset] || 0.75, bw = Math.max(0.5, px1 - px0), bh = Math.max(0.5, py1 - py0);
+            var r = frameRatio(proj, pics[i], 0.75), bw = Math.max(0.5, px1 - px0), bh = Math.max(0.5, py1 - py0);
             var w = Math.min(bw, bh * r), h = w / r;
             cells.push({ x: x0 + (bw - w) / 2 + dx, y: y0 + (bh - h) / 2, w: w, h: h });
           }
         }
       } else {
         // packed group: same height side by side, same width stacked
-        var rs = pics.map(function (q) { return RATIO[q.preset] || 0.75; }), sum = 0;
+        var rs = pics.map(function (q) { return frameRatio(proj, q, 0.75); }), sum = 0;
         rs.forEach(function (r) { sum += row ? r : 1 / r; });
         var cross = row ? Math.min(rH, Math.max(0.5, rW - (k - 1) * g) / sum) : Math.min(rW, Math.max(0.5, rH - (k - 1) * g) / sum);
         var sizes = rs.map(function (r) { return row ? { w: cross * r, h: cross } : { w: cross, h: cross / r }; });
@@ -239,7 +251,7 @@
     var fill = preset === 'fill page', fr;
     if (fill) fr = { x: -bleed, y: -bleed, w: 2 * W + 2 * bleed, h: H + 2 * bleed };
     else {
-      var r = RATIO[preset] || 2, rH = Math.max(1, H - 2 * m - (wrap ? 3.75 : 0));
+      var r = frameRatio(proj, { photo: data.photo, preset: preset, native: data.native }, 2), rH = Math.max(1, H - 2 * m - (wrap ? 3.75 : 0));
       var w = Math.min(2 * W - 2 * m, rH * r), h = w / r;
       fr = { x: W - w / 2, y: m + (rH - h) / 2, w: w, h: h };
     }
@@ -393,7 +405,7 @@
     defaultProject: defaultProject, newId: newId, pageDefaults: pageDefaults, getPage: getPage, spreadInfo: spreadInfo,
     wrapInfo: wrapInfo, wideAt: wideAt, pageRole: pageRole, layoutPage: layoutPage, layoutSpread: layoutSpread, imposition: imposition, sheetGeo: sheetGeo,
     jigInfo: jigInfo, sheetLabel: sheetLabel, cropRegion: cropRegion, wrapText: wrapText, photoPages: photoPages,
-    photoRefs: photoRefs, unplacedPhotos: unplacedPhotos, withKeep: withKeep, stripKeep: stripKeep
+    photoRatio: photoRatio, frameRatio: frameRatio, photoRefs: photoRefs, unplacedPhotos: unplacedPhotos, withKeep: withKeep, stripKeep: stripKeep
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ZL = api;
 })(typeof self !== 'undefined' ? self : this);

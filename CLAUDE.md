@@ -21,7 +21,8 @@ See [notes.md](notes.md) for how features were built, [Plan.md](Plan.md) for ope
 ## Data model (project JSON, `v: 1`)
 - `s`: settings, always passed through `normalizeSettings` (it drops unknown keys and clamps values).
 - `pages["n"]`: only the overrides of `pageDefaults`. Always read pages through `getPage`, which fills in defaults and normalizes `count`, `dir`, `gap`, `fit`, `preset` and `pics`.
-- Page picture fields: `photo`, `crop {cx, cy, z}`, `preset`, plus `count` (1 to 3), `dir` (`row`/`column`), `gap` (cm), `fit` (`match`/`equal`), and `pics: [{photo, crop, preset}]` for pictures 2 and 3.
+- Page picture fields: `photo`, `crop {cx, cy, z}`, `preset`, `native`, plus `count` (1 to 3), `dir` (`row`/`column`), `gap` (cm), `fit` (`match`/`equal`), and `pics: [{photo, crop, preset, native}]` for pictures 2 and 3.
+- `native` (also on `spread` and `wrap`): the frame uses the photo's own aspect ratio (`photoRatio`/`frameRatio` in `layout.js`) and `preset` is kept as the chosen ratio to switch back to. Ignored for `'fill page'` and when there is no photo. Placing a photo in an empty frame sets it (`putPhoto` in `app.js`).
 - `spread` and `wrap`: two-page pictures, with frames stored in `s.spreadPreset` and `s.wrapPreset`.
 - Presets are `'fill page'` or `'<portrait|landscape> <ratio>'`, built from `ORIENTS` × `RATIOS` in `layout.js`. Ratios are written long:short, except the legacy `'1:2'` (which means 2:1 landscape). To add a ratio, add one entry to `RATIOS`.
 - Slots in the UI: a page number, `'spread'`, `'wrap'`, or `'n:i'` for picture i+1 on page n (i = 1, 2).

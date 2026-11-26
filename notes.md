@@ -61,7 +61,13 @@ Export crashed for Archivo 400, IBM Plex Mono and Space Grotesk. fontkit's `TTFG
 - New field `app` (data level, 2) for the future: opening a project with a higher level shows "saved by a newer version" (it can't help copies older than this one).
 - Checked: Node runs every old `gcPhotos` against saved data (without stubs they delete up to 6 of 11 test photos, with stubs none), old `layout.js` versions lay out the same with stubs, and the compatibility run still shows 0 differences. In the browser pane: startup adds stubs, the Photos tab ignores them, a7452b1 served from the same origin opened the zine and kept all photos (without stubs it deleted both unplaced ones), and the newer-version warning shows.
 
+## Photo's own aspect ratio
+- New field `native` on each framed picture (`pages[n]`, `pics[i]`, `spread`, `wrap`). When it's on and the frame has a photo, `frameRatio` uses the photo's `w / h` instead of the preset's ratio. The preset stays stored, so the inspector's "Use: Chosen ratio / Photo's ratio" switch flips between the two. Picking a ratio from the frame menus switches it off.
+- `putPhoto` sets it when a photo goes into an empty frame (pick, drop, pool tap, filling the following empty frames, split/join). A two-page frame gets it only for a landscape photo, since a portrait one would be a narrow strip across the fold. Replacing a photo keeps the frame's setting. Earlier/Later moves `native` with the photo.
+- No data level raise: older copies ignore the field and show the chosen ratio, and they keep it when they save.
+- Checked in Node: old `layout.js` against the new one on 248 page and spread layouts (0 differences), native ratios in single, side by side, stacked, equal-space and fill-neighbour pages and on the spread, both PDF modes with native frames, crop mark check. The UI was not checked in the browser pane (not available in that session).
+
 ## How we work
 - Each feature: change `layout.js` first and check the numbers in Node, then the UI in `app.js`, then make sure both PDF modes still build in Node. Since 6f85a15 the UI is also checked in the browser pane.
-- Bump `sw.js` `VERSION` in every release commit (currently `zine-v9`).
+- Bump `sw.js` `VERSION` in every release commit (currently `zine-v11`).
 - The user reviews, then asks to commit and push to `master`.

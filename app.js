@@ -269,7 +269,7 @@
         toast('Adding photo ' + (i + 1) + ' of ' + files.length + '…', 0);
         return ingest(f).then(function (id) {
           if (i >= targets.length) { pooled++; return; }
-          var o = slotObj(targets[i]); o.photo = id; o.crop = { cx: 0.5, cy: 0.5, z: 1 }; placed++;
+          putPhoto(targets[i], id); placed++;
         }).catch(function () { failed++; });
       });
     });
@@ -290,8 +290,15 @@
 
   function pick(slot) { S.pickSlot = slot; fileInput.click(); }
 
+  /* A frame that was empty takes the photo's own aspect ratio; a two-page frame only for a landscape photo. */
+  function putPhoto(slot, id) {
+    var was = slotPhoto(slot), o = slotObj(slot);
+    o.photo = id; o.crop = { cx: 0.5, cy: 0.5, z: 1 };
+    if (!was) o.native = !isWide(slot) || Z.photoRatio(S.proj, id) > 1;
+  }
+
   function place(slot, id) {
-    var o = slotObj(slot); o.photo = id; o.crop = { cx: 0.5, cy: 0.5, z: 1 };
+    putPhoto(slot, id);
     S.sel = slot; save(); renderBody(); renderInspector();
   }
 
@@ -515,14 +522,22 @@
       }
 
       var cur = slot === 'spread' ? p.s.spreadPreset : slot === 'wrap' ? p.s.wrapPreset : sub ? pgd.pics[sub.i - 1].preset : pgd.preset;
+      var has = !!slotPhoto(slot), pr = has && Z.photoRatio(p, slotPhoto(slot));
+      var native = !!(isWide(slot) ? p[slot].native : sub ? pgd.pics[sub.i - 1].native : pgd.native) && !!pr;
       kids.push.apply(kids, frameRows(pgd && pgd.count > 1 ? 'Frame ' + (sub ? sub.i + 1 : 1) : 'Frame', cur, presets, function (v) {
         if (slot === 'spread') p.s.spreadPreset = v;
         else if (slot === 'wrap') p.s.wrapPreset = v;
         else slotObj(slot).preset = v;
+        slotObj(slot).native = false;
         save(); renderBody(); renderInspector();
-      }));
+      }, native));
+      if (pr && cur !== 'fill page') {
+        var setNative = function (v) { slotObj(slot).native = v; save(); renderBody(); renderInspector(); };
+        kids.push(h('div', { class: 'row' }, h('span', { class: 'lab' }, 'Use'), h('div', { class: 'seg grow' },
+          h('button', { class: native ? '' : 'on', onClick: function () { setNative(false); } }, 'Chosen ratio'),
+          h('button', { class: native ? 'on' : '', onClick: function () { setNative(true); } }, 'Photo’s ratio (' + ratioLabel(pr) + ')'))));
+      }
 
-      var has = !!slotPhoto(slot);
       kids.push(h('div', { class: 'row-btns' },
         h('button', { class: 'btn primary', onClick: function () { pick(slot); } }, has ? 'Replace photo…' : 'Choose photos…'),
         has ? h('button', { class: 'btn', onClick: function () { slotObj(slot).photo = null; save(); renderBody(); renderInspector(); } }, 'Remove') : null));
@@ -562,8 +577,16 @@
     inspEl.replaceChildren.apply(inspEl, kids);
   }
 
-  /* Two menus for one frame preset: fill page / portrait / landscape, then the ratio (hidden for fill page). */
-  function frameRows(label, cur, presets, set) {
+  /* A width / height ratio as long:short, e.g. '3:2' or '1.78:1'. */
+  function ratioLabel(r) {
+    var l = Math.max(r, 1 / r), names = [['1:1', 1], ['5:4', 1.25], ['4:3', 4 / 3], ['3:2', 1.5], ['16:9', 16 / 9], ['2:1', 2], ['65:24', 65 / 24]], i;
+    for (i = 0; i < names.length; i++) if (Math.abs(l / names[i][1] - 1) < 0.01) return names[i][0];
+    return l.toFixed(2) + ':1';
+  }
+
+  /* Two menus for one frame preset: fill page / portrait / landscape, then the ratio (hidden for fill page).
+     With native on, both menus still show the chosen preset but are dimmed; picking from either menu switches native off. */
+  function frameRows(label, cur, presets, set, native) {
     var cap = function (t) { return t.charAt(0).toUpperCase() + t.slice(1); };
     var parts = cur.split(' '), orient = cur === 'fill page' ? cur : parts[0], ratio = cur === 'fill page' ? null : parts[1];
     var orients = ['fill page'].concat(Z.ORIENTS).filter(function (o) {
@@ -576,12 +599,12 @@
       set(o + ' ' + r);
     } }, orients.map(function (o) { return h('option', { value: o }, cap(o)); }));
     oSel.value = orient;
-    var rows = [h('label', { class: 'row' }, h('span', { class: 'lab' }, label), oSel)];
+    var rows = [h('label', { class: 'row' + (native ? ' dim' : '') }, h('span', { class: 'lab' }, label), oSel)];
     if (ratio) {
       var rSel = h('select', { onChange: function () { set(orient + ' ' + rSel.value); } },
         Z.RATIOS.filter(function (r) { return presets.indexOf(orient + ' ' + r) >= 0; }).map(function (r) { return h('option', { value: r }, r); }));
       rSel.value = ratio;
-      rows.push(h('label', { class: 'row' }, h('span', { class: 'lab' }, 'Aspect ratio'), rSel));
+      rows.push(h('label', { class: 'row' + (native ? ' dim' : '') }, h('span', { class: 'lab' }, 'Aspect ratio'), rSel));
     }
     return rows;
   }
@@ -602,8 +625,8 @@
   function setWide(key, on) {
     var p = S.proj, info = key === 'wrap' ? Z.wrapInfo(p) : Z.spreadInfo(p), page = key === 'wrap' ? 1 : info.left;
     var wide = p[key], pg = slotObj(page);
-    if (on && !wide.photo && Z.getPage(p, page).photo) { wide.photo = pg.photo; wide.crop = { cx: 0.5, cy: 0.5, z: 1 }; pg.photo = null; }
-    if (!on && wide.photo && !Z.getPage(p, page).photo) { pg.photo = wide.photo; pg.crop = { cx: 0.5, cy: 0.5, z: 1 }; pg.kind = 'photo'; wide.photo = null; }
+    if (on && !wide.photo && Z.getPage(p, page).photo) { putPhoto(key, pg.photo); pg.photo = null; }
+    if (!on && wide.photo && !Z.getPage(p, page).photo) { putPhoto(page, wide.photo); pg.kind = 'photo'; wide.photo = null; }
     setS(key + 'On', on);
     S.sel = on ? key : page;
     renderBody(); renderInspector();
@@ -623,7 +646,7 @@
     if (i < 0 || j < 0 || j >= list.length) return;
     var a = slotObj(list[i]), b = slotObj(list[j]);
     // captions belong to the page, so they only travel between first pictures
-    (subOf(list[i]) || subOf(list[j]) ? ['photo', 'crop'] : ['photo', 'crop', 'caption']).forEach(function (k) { var t = a[k]; a[k] = b[k]; b[k] = t; });
+    (subOf(list[i]) || subOf(list[j]) ? ['photo', 'crop', 'native'] : ['photo', 'crop', 'native', 'caption']).forEach(function (k) { var t = a[k]; a[k] = b[k]; b[k] = t; });
     S.sel = list[j]; save(); renderBody(); renderInspector();
   }
 
