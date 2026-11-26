@@ -54,7 +54,7 @@
     for (k in d) o[k] = (s && s[k] !== undefined) ? s[k] : d[k];
     o.w = clamp(Math.round(+o.w * 2) / 2, 8, 30);
     o.h = clamp(Math.round(+o.h * 2) / 2, 8, 30);
-    o.pages = clamp(Math.round(+o.pages / 4) * 4, 4, 32);
+    o.pages = clamp(Math.round(+o.pages / 4) * 4, 4, 64);
     o.margin = clamp(+o.margin, 0.5, 3);
     o.bleed = clamp(+o.bleed, 0, 0.5);
     o.thickness = clamp(+o.thickness, 0, 0.5);

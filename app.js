@@ -46,8 +46,8 @@
 
   /* ---------- save ---------- */
   /* Data level of this app. Raise it when a release stores something an older copy would damage when it saves. */
-  var DATA = 2;
-  function stored(p) { p.app = Math.max(p.app || 1, DATA); return Z.withKeep(p); }
+  var DATA = 3; // 3: more than 32 pages, which level 2 copies cut back to 32
+  function stored(p) { p.app = Math.max(p.app || 1, p.s.pages > 32 ? 3 : 2); return Z.withKeep(p); }
   var saveT = null;
   function save() {
     clearTimeout(saveT);
@@ -783,7 +783,7 @@
         presetSel,
         sliderRow('Width', 'w', 8, 30, 0.5, function (v) { return Z.round1(v) + ' cm'; }),
         sliderRow('Height', 'h', 8, 30, 0.5, function (v) { return Z.round1(v) + ' cm'; }),
-        sliderRow('Pages', 'pages', 4, 32, 4, function (v) { return v; }),
+        sliderRow('Pages', 'pages', 4, 64, 4, function (v) { return v; }),
         sliderRow('Margin', 'margin', 0.5, 3, 0.1, function (v) { return Z.round1(v) + ' cm'; }),
         sliderRow('Bleed', 'bleed', 0, 0.5, 0.05, function (v) { return Math.round(v * 100) / 10 + ' mm'; })),
       h('section', {}, h('h3', {}, 'Binding and paper'),
